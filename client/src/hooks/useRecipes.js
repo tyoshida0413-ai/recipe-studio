@@ -334,6 +334,17 @@ export function useRecipes() {
     fetchRecipes();
   }, [fetchRecipes]);
 
+  // recipesが更新・マイグレーションされた際、現在選択中のcurrentRecipeも最新オブジェクトに自動同期する
+  useEffect(() => {
+    if (recipes && recipes.length > 0) {
+      setCurrentRecipe((prev) => {
+        if (!prev) return recipes[0];
+        const updated = recipes.find((r) => r.id === prev.id);
+        return updated || recipes[0];
+      });
+    }
+  }, [recipes]);
+
   // グループ一覧の動的生成
   const groups = [
     { key: 'pasta', name: '🍝 パスタ系' },

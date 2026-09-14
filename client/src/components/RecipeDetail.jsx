@@ -538,12 +538,6 @@ export default function RecipeDetail({
                   </div>
                 )}
 
-                {!recipe.youtubeId && step.stepImage && (
-                  <div className="step-img-box">
-                    <img src={step.stepImage} alt={`工程 ${step.num} 写真`} className="step-thumb" />
-                  </div>
-                )}
-
                 {step.tip && (
                   <div className="step-tip">
                     <strong>Tip:</strong> {step.tip}

@@ -183,7 +183,7 @@ export default function CookingMode({ recipe, onClose }) {
           <div className="cooking-media-frame">
             <img
               src={
-                currentStep.stepImage ||
+                (!recipe?.youtubeId && currentStep.stepImage) ||
                 recipe?.coverImage ||
                 'https://images.unsplash.com/photo-1546549032-9571cd6b27df?w=800&q=80'
               }
