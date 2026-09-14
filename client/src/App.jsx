@@ -40,6 +40,27 @@ export default function App() {
     }
   }, [recipes, currentRecipe, selectRecipe]);
 
+  // URLハッシュ（#setup=...）からの設定自動取り込み（iPad引き継ぎ用）
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.startsWith('#setup=')) {
+      try {
+        const raw = hash.replace('#setup=', '');
+        const jsonStr = decodeURIComponent(escape(atob(raw)));
+        const importedConfig = JSON.parse(jsonStr);
+        if (importedConfig && typeof importedConfig === 'object') {
+          updateSettings(importedConfig).then(() => {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            alert('🎉 設定（Supabase同期 ＆ Gemini）を自動引き継ぎしました！同期を開始します。');
+            window.location.reload();
+          });
+        }
+      } catch (e) {
+        console.error('Failed to import config from hash:', e);
+      }
+    }
+  }, [updateSettings]);
+
   // 検索フィルター
   const handleSearchChange = (term) => {
     setFilters((prev) => ({ ...prev, search: term }));

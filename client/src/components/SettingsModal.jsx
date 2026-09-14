@@ -34,6 +34,10 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
   const [syncKey, setSyncKey] = useState('');
   const [testStatus, setTestStatus] = useState(null);
 
+  // iPad連携用
+  const [showTransferQR, setShowTransferQR] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
@@ -95,6 +99,30 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
       setTestStatus('error');
       setMessage({ type: 'error', text: `Supabase接続テスト失敗: ${err.message}` });
     }
+  };
+  // iPad引き継ぎURL生成
+  const getTransferUrl = () => {
+    const config = {
+      gemini_api_key: geminiApiKey.trim() || settings?.gemini_api_key || '',
+      gemini_model: effectiveGeminiModel,
+      supabase_url: supabaseUrl.trim() || settings?.supabase_url || '',
+      supabase_anon_key: supabaseAnonKey.trim() || settings?.supabase_anon_key || '',
+      sync_key: syncKey.trim() || settings?.sync_key || '',
+    };
+    if (openaiApiKey.trim() || settings?.openai_api_key) {
+      config.openai_api_key = openaiApiKey.trim() || settings?.openai_api_key;
+    }
+    const base64 = btoa(unescape(encodeURIComponent(JSON.stringify(config))));
+    const baseUrl = window.location.origin + window.location.pathname;
+    return `${baseUrl}#setup=${base64}`;
+  };
+
+  const handleCopyLink = () => {
+    const url = getTransferUrl();
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    });
   };
 
   const handleSave = async () => {
@@ -330,6 +358,50 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
               </button>
               {testStatus === 'ok' && <span style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600 }}>✓ 接続成功！テーブル認識OK</span>}
             </div>
+          </div>
+
+          {/* iPad への一発引き継ぎ（QRコード / URL） */}
+          <div style={{ marginBottom: '16px', background: '#f8fafc', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid #cbd5e1' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.2rem' }}>📱</span>
+                <span style={{ fontWeight: 700, fontSize: '0.94rem', color: '#1e293b' }}>iPadへ一発引き継ぎ（手入力ゼロ）</span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-small"
+                onClick={() => setShowTransferQR(!showTransferQR)}
+                style={{ fontSize: '0.78rem' }}
+              >
+                {showTransferQR ? 'QRコードを閉じる' : '📷 QRコードを表示'}
+              </button>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+              Macの全設定（同期キー・Supabase・Gemini）を、iPadのカメラでかざすだけで一瞬で同期完了できます。
+            </div>
+
+            {showTransferQR && (
+              <div style={{ marginTop: '12px', textAlign: 'center', background: '#fff', padding: '14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155', marginBottom: '8px' }}>
+                  iPadの標準カメラで以下のQRコードを読み取ってください
+                </div>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(getTransferUrl())}`}
+                  alt="iPad連携QRコード"
+                  style={{ width: '160px', height: '160px', display: 'inline-block', borderRadius: '8px', border: '1px solid #e2e8f0' }}
+                />
+                <div style={{ marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-small"
+                    onClick={handleCopyLink}
+                    style={{ fontSize: '0.78rem' }}
+                  >
+                    {copiedLink ? '✓ 引き継ぎURLをコピーしました！' : '🔗 引き継ぎURLをコピー (AirDrop/メモ用)'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* OpenAI API Key（任意・代替） */}
