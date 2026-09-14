@@ -136,6 +136,7 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
               model: settings.gemini_model || 'gemini-3.8-flash',
               sourceType: 'yt',
               sourceBadge: authorName ? `▶ ${authorName}` : '▶ YouTube (Gemini)',
+              youtubeUrl: youtubeUrl.trim(),
             }
           );
 

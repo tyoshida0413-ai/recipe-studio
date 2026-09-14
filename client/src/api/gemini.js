@@ -73,7 +73,7 @@ export async function analyzeWithGemini(apiKey, inputText, options = {}) {
 
   // 最新モデル（デフォルト: gemini-3.8-flash）
   const model = options.model || 'gemini-3.8-flash';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
+  const cleanKey = apiKey.trim();
 
   const userPrompt = `
 以下の料理情報からレシピを作成・解析してください：
@@ -83,35 +83,102 @@ ${inputText}
 必ず指定されたJSONフォーマットのみを返してください。Markdownのコードブロック（\`\`\`json）で囲んで構いません。
 `;
 
-  const requestBody = {
-    contents: [
-      {
-        parts: [
-          { text: RECIPE_PROMPT_SYSTEM },
-          { text: userPrompt },
+  let rawText = null;
+
+  // === アプローチ1: Google公式 最新 interactions API（YouTube URL 直接マルチモーダル解析 ＆ Google Search Grounding） ===
+  if (options.youtubeUrl) {
+    try {
+      const interactionsEndpoint = `https://generativelanguage.googleapis.com/v1beta/interactions`;
+      const interactionPayload = {
+        model: model,
+        input: [
+          { type: 'text', text: `${RECIPE_PROMPT_SYSTEM}\n\n${userPrompt}` },
+          { type: 'video', uri: options.youtubeUrl.trim() },
         ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.2,
-      responseMimeType: "application/json",
-    },
-  };
+        tools: [{ type: 'google_search' }],
+      };
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
+      const iRes = await fetch(interactionsEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': cleanKey,
+        },
+        body: JSON.stringify(interactionPayload),
+      });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    const message = errorData.error?.message || `Gemini API エラー: ステータス ${res.status}`;
-    throw new Error(message);
+      if (iRes.ok) {
+        const iData = await iRes.json();
+        rawText = iData.output_text ||
+          iData.candidates?.[0]?.content?.parts?.[0]?.text ||
+          (Array.isArray(iData.steps) ? iData.steps.find(s => s.type === 'text')?.text : null);
+      } else {
+        console.warn(`Interactions API returned status ${iRes.status}, falling back to generateContent`);
+      }
+    } catch (iErr) {
+      console.warn('Interactions API call error, falling back to generateContent:', iErr);
+    }
   }
 
-  const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  // === アプローチ2: 従来の generateContent API（Google Search Grounding ツール併用） ===
+  if (!rawText) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            { text: RECIPE_PROMPT_SYSTEM },
+            { text: userPrompt },
+          ],
+        },
+      ],
+      tools: [
+        { googleSearch: {} },
+      ],
+      generationConfig: {
+        temperature: 0.1, // 創造性を抑えて忠実性を極限まで高める
+        responseMimeType: 'application/json',
+      },
+    };
+
+    let res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    // もし googleSearch ツールがモデル側で非対応エラーになった場合はツールなしで再試行
+    if (!res.ok) {
+      const fallbackBody = {
+        contents: [
+          {
+            parts: [
+              { text: RECIPE_PROMPT_SYSTEM },
+              { text: userPrompt },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json',
+        },
+      };
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fallbackBody),
+      });
+    }
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      const message = errorData.error?.message || `Gemini API エラー: ステータス ${res.status}`;
+      throw new Error(message);
+    }
+
+    const data = await res.json();
+    rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  }
 
   if (!rawText) {
     throw new Error('Geminiからの応答を取得できませんでした。');

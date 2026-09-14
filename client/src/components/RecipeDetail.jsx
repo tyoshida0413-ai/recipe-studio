@@ -118,6 +118,7 @@ export default function RecipeDetail({
         model: settings.gemini_model || 'gemini-3.8-flash',
         sourceType: 'yt',
         sourceBadge: authorName ? `▶ ${authorName}` : '▶ YouTube (Gemini)',
+        youtubeUrl: `https://www.youtube.com/watch?v=${recipe.youtubeId}`,
       });
 
       const updatedData = {
