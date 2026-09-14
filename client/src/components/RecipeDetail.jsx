@@ -85,8 +85,8 @@ export default function RecipeDetail({
     setReAnalyzeStatus('動画情報を取得中...');
     try {
       const info = await fetchYouTubeInfo(recipe.youtubeId);
-      const videoTitle = info?.title || '';
-      const authorName = info?.author || '';
+      const videoTitle = info?.title || recipe.title || '';
+      const authorName = info?.author || recipe.sourceName || '';
       const videoDesc = info?.description || '';
 
       setReAnalyzeStatus(videoTitle ? `「${videoTitle}」からレシピをAI生成中...` : 'AIレシピを解析中...');
