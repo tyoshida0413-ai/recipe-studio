@@ -72,7 +72,15 @@ export async function analyzeWithGemini(apiKey, inputText, options = {}) {
   }
 
   const cleanKey = apiKey.trim();
-  const model = (options.model || 'gemini-3.8-flash').trim();
+  const preferredModel = (options.model || 'gemini-3.8-flash').trim();
+
+  // 試行するモデル候補のチェーン（指定モデルが利用不可・権限外の場合に即座にフォールバック）
+  const candidateModels = [
+    preferredModel,
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+  ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
   const userPrompt = `
 以下の料理情報からレシピを作成・解析してください：
@@ -82,63 +90,107 @@ ${inputText}
 必ず指定されたJSONフォーマットのみを返してください。Markdownのコードブロック（\`\`\`json）で囲んで構いません。
 `;
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
-
-  const requestBody = {
-    contents: [
-      {
-        parts: [
-          { text: RECIPE_PROMPT_SYSTEM },
-          { text: userPrompt },
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.1, // 創造性を抑えて忠実性を極限まで高める
-      responseMimeType: 'application/json',
-    },
-  };
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    const message = errorData.error?.message || `Gemini API エラー: ステータス ${res.status}`;
-    console.error('Gemini API Error:', errorData);
-    throw new Error(message);
-  }
-
-  const data = await res.json();
-
-  // レスポンスから安全に回答テキスト（JSON）を抽出
+  let lastError = null;
   let rawText = '';
-  const candidate = data.candidates?.[0];
+  let successfulModel = '';
 
-  if (candidate) {
-    const parts = candidate.content?.parts || [];
-    // 思考モデル（Thinking）の thought: true パートを除外し、回答テキストを抽出
-    const answerParts = parts.filter((p) => p.text && !p.thought);
-    if (answerParts.length > 0) {
-      rawText = answerParts.map((p) => p.text).join('\n').trim();
-    } else {
-      rawText = parts.map((p) => p.text || '').filter(Boolean).join('\n').trim();
+  for (const currentModel of candidateModels) {
+    try {
+      // === 方式A: Google公式 最新 Interactions API（2026年仕様） ===
+      try {
+        const iEndpoint = `https://generativelanguage.googleapis.com/v1beta/interactions?key=${cleanKey}`;
+        const iPayload = {
+          model: currentModel,
+          system_instruction: RECIPE_PROMPT_SYSTEM,
+          input: userPrompt,
+          response_format: {
+            type: 'text',
+            mime_type: 'application/json',
+          },
+        };
+
+        const iRes = await fetch(iEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(iPayload),
+        });
+
+        if (iRes.ok) {
+          const iData = await iRes.json();
+          const t = iData.output_text ||
+            (Array.isArray(iData.steps) ? iData.steps.find(s => s.type === 'text')?.text : null);
+          if (t && t.trim()) {
+            rawText = t.trim();
+            successfulModel = currentModel;
+            break;
+          }
+        }
+      } catch (iErr) {
+        // Interactions API がブラウザCORS等で失敗した場合は generateContent へ進む
+      }
+
+      // === 方式B: 公式標準 generateContent API（JSON構造化出力モード） ===
+      if (!rawText) {
+        const gEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${cleanKey}`;
+        const gPayload = {
+          contents: [
+            {
+              parts: [
+                { text: RECIPE_PROMPT_SYSTEM },
+                { text: userPrompt },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+          },
+        };
+
+        const gRes = await fetch(gEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(gPayload),
+        });
+
+        if (!gRes.ok) {
+          const errJson = await gRes.json().catch(() => ({}));
+          const errMsg = errJson.error?.message || `HTTP ${gRes.status}`;
+          throw new Error(`[${currentModel}] ${errMsg}`);
+        }
+
+        const data = await gRes.json();
+        const candidate = data.candidates?.[0];
+
+        if (candidate) {
+          const parts = candidate.content?.parts || [];
+          // 思考モデルの thought: true パートを除外し、本文JSONを抽出
+          const answerParts = parts.filter((p) => p.text && !p.thought);
+          if (answerParts.length > 0) {
+            rawText = answerParts.map((p) => p.text).join('\n').trim();
+          } else {
+            rawText = parts.map((p) => p.text || '').filter(Boolean).join('\n').trim();
+          }
+        }
+
+        if (rawText) {
+          successfulModel = currentModel;
+          break;
+        } else {
+          const reason = candidate?.finishReason || data.promptFeedback?.blockReason || '応答が空でした';
+          throw new Error(`[${currentModel}] レスポンス中断: ${reason}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`Model ${currentModel} failed:`, err.message);
+      lastError = err;
+      // 次のモデルへフォールバックして自動再試行
     }
   }
 
   if (!rawText) {
-    const blockReason = data.promptFeedback?.blockReason;
-    const finishReason = candidate?.finishReason;
-    if (blockReason) {
-      throw new Error(`安全フィルターによりブロックされました（理由: ${blockReason}）`);
-    }
-    if (finishReason && finishReason !== 'STOP') {
-      throw new Error(`Geminiの応答が中断されました（終了理由: ${finishReason}）`);
-    }
-    throw new Error('Geminiからの応答テキストが空でした。別のモデルを選択するか、APIキーをご確認ください。');
+    const detailMsg = lastError?.message || '利用可能なGeminiモデルが見つかりませんでした。';
+    throw new Error(`Gemini API エラー: ${detailMsg}。APIキーの有効性と残枠をご確認ください。`);
   }
 
   // JSONパース
@@ -147,7 +199,7 @@ ${inputText}
     const recipe = JSON.parse(cleaned);
     recipe.id = `rec_${Date.now()}`;
     recipe.sourceType = options.sourceType || 'ai';
-    recipe.sourceBadge = options.sourceBadge || `🤖 Gemini (${model})`;
+    recipe.sourceBadge = options.sourceBadge || `🤖 Gemini (${successfulModel})`;
     recipe.isFavorite = false;
 
     // 各工程のタイムスタンプ補完（欠落防止）
@@ -177,19 +229,34 @@ export async function testGeminiConnection(apiKey, model = 'gemini-3.8-flash') {
   if (!apiKey || !apiKey.trim()) {
     throw new Error('Gemini API キーが未入力です');
   }
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:generateContent?key=${apiKey.trim()}`;
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: 'Hello, respond with OK only.' }] }],
-    }),
-  });
+  const cleanKey = apiKey.trim();
+  const candidateModels = [
+    (model || 'gemini-3.8-flash').trim(),
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+  ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `HTTPエラー ${res.status}`);
+  let lastErr = null;
+  for (const m of candidateModels) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${cleanKey}`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Hello, respond with OK only.' }] }],
+        }),
+      });
+      if (res.ok) {
+        return { ok: true, activeModel: m };
+      }
+      const errorData = await res.json().catch(() => ({}));
+      lastErr = new Error(`[${m}] ` + (errorData.error?.message || `HTTPエラー ${res.status}`));
+    } catch (e) {
+      lastErr = e;
+    }
   }
-  return true;
+  throw lastErr || new Error('Gemini API への接続テストに失敗しました。');
 }
 

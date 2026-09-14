@@ -137,7 +137,7 @@ export default function RecipeDetail({
 
       await onUpdateRecipe(recipe.id, updatedData);
     } catch (err) {
-      alert('レシピの再生成に失敗しました: ' + (err.message || 'エラーが発生しました'));
+      alert(`レシピの再生成に失敗しました:\n\n${err.message || 'エラーが発生しました'}\n\n※ 右上の「⚙️ API設定」からGemini APIキーの接続テストやモデル変更をお試しください。`);
     } finally {
       setIsReAnalyzing(false);
       setReAnalyzeStatus('');
