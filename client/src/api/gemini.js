@@ -1,12 +1,12 @@
 /**
  * Google Gemini API 直接連携クライアント
  * Google AI Studio で取得した Gemini API キー（AIzaSy...）を用いて、
- * ブラウザから直接高速・高精度なレシピ構造化解析を実行します。
+ * ブラウザから直接最新モデル（Gemini 3.8 Flash 等）で高速・高精度なレシピ構造化解析を実行します。
  */
 
 const RECIPE_PROMPT_SYSTEM = `
 あなたはプロの料理研究家兼レシピ解析AIです。
-入力された情報（テキスト、メモ、YouTube字幕、料理の要望など）から、料理レシピを正確に構造化し、必ず指定されたJSONフォーマットのみを出力してください。
+入力された情報（テキスト、メモ、YouTube動画情報、料理の要望など）から、料理レシピを正確に構造化し、必ず指定されたJSONフォーマットのみを出力してください。
 
 【出力必須JSONスキーマ】
 {
@@ -50,7 +50,8 @@ export async function analyzeWithGemini(apiKey, inputText, options = {}) {
     throw new Error('Gemini API キーが設定されていません。「⚙️ API設定」から登録してください。');
   }
 
-  const model = options.model || 'gemini-2.0-flash';
+  // 最新モデル（デフォルト: gemini-3.8-flash）
+  const model = options.model || 'gemini-3.8-flash';
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
 
   const userPrompt = `
@@ -101,7 +102,7 @@ ${inputText}
     const recipe = JSON.parse(cleaned);
     recipe.id = `rec_${Date.now()}`;
     recipe.sourceType = options.sourceType || 'ai';
-    recipe.sourceBadge = options.sourceBadge || '🤖 Gemini AI';
+    recipe.sourceBadge = options.sourceBadge || `🤖 Gemini (${model})`;
     recipe.isFavorite = false;
     return recipe;
   } catch (parseErr) {
@@ -109,3 +110,27 @@ ${inputText}
     throw new Error('Geminiの出力結果をレシピ形式に変換できませんでした。');
   }
 }
+
+/**
+ * Gemini API 接続テスト
+ */
+export async function testGeminiConnection(apiKey, model = 'gemini-3.8-flash') {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('Gemini API キーが未入力です');
+  }
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:generateContent?key=${apiKey.trim()}`;
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: 'Hello, respond with OK only.' }] }],
+    }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `HTTPエラー ${res.status}`);
+  }
+  return true;
+}
+

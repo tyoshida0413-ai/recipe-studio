@@ -55,7 +55,7 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
             geminiKey,
             `YouTube料理動画 URL: ${youtubeUrl.trim()}\nこの動画のレシピ内容（料理名、必要な材料と正確な分量、調理手順、プロのコツ）を詳細に解析して構造化してください。`,
             {
-              model: settings.gemini_model || 'gemini-2.0-flash',
+              model: settings.gemini_model || 'gemini-3.8-flash',
               sourceType: 'yt',
               sourceBadge: '▶ YouTube (Gemini)',
             }
@@ -71,7 +71,7 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
           if (!xPostText.trim()) throw new Error('X（Twitter）のポスト内容を入力してください');
           setCurrentStepText('Gemini AIがXポストから材料と工程を抽出中...');
           created = await analyzeWithGemini(geminiKey, xPostText.trim(), {
-            model: settings.gemini_model || 'gemini-2.0-flash',
+            model: settings.gemini_model || 'gemini-3.8-flash',
             sourceType: 'x',
             sourceBadge: '𝕏 ポスト (Gemini)',
           });
@@ -79,7 +79,7 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
           if (!memoText.trim()) throw new Error('メモのテキストを入力してください');
           setCurrentStepText('Gemini AIがメモのテキストを構造化レシピに変換中...');
           created = await analyzeWithGemini(geminiKey, memoText.trim(), {
-            model: settings.gemini_model || 'gemini-2.0-flash',
+            model: settings.gemini_model || 'gemini-3.8-flash',
             sourceType: 'memo',
             sourceBadge: '📝 メモ (Gemini)',
           });
@@ -90,7 +90,7 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
             geminiKey,
             `以下の要望に基づき、家庭で美味しく作れる最高のレシピを考案してください：\n${aiPrompt.trim()}`,
             {
-              model: settings.gemini_model || 'gemini-2.0-flash',
+              model: settings.gemini_model || 'gemini-3.8-flash',
               sourceType: 'ai',
               sourceBadge: '🤖 Gemini AI考案',
             }
@@ -141,7 +141,12 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
     <div className="modal-overlay active" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-card" style={{ width: '620px' }}>
         <div className="modal-header">
-          <div className="modal-title">✨ レシピの取り込み・新規作成</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="modal-title">✨ レシピの取り込み・新規作成</div>
+            <span style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+              {getSettings().gemini_api_key ? `⚡️ Gemini (${getSettings().gemini_model || 'gemini-3.8-flash'})` : '🤖 AI Engine'}
+            </span>
+          </div>
           <button className="modal-close" onClick={onClose} disabled={loading}>
             ✕
           </button>
