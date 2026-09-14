@@ -160,22 +160,14 @@ export function useRecipes() {
       const settings = getStoredSettings();
       const { supabase_url, supabase_anon_key, sync_key } = settings;
 
-      // 1. Supabase 同期キーが設定されている場合
+      // 1. Supabase 同期キーが設定されている場合（クラウドを唯一の真実とする）
       if (supabase_url && supabase_anon_key && sync_key) {
         try {
           const cloudData = await supabaseSync.fetchRecipes(supabase_url, supabase_anon_key, sync_key);
-          if (cloudData && cloudData.length > 0) {
+          if (cloudData !== null) {
+            // クラウドにデータがある、あるいは空配列（0件）の場合、そのまま反映
             setRecipes(cloudData);
             localStorage.setItem(LOCAL_RECIPES_KEY, JSON.stringify(cloudData));
-            return;
-          } else if (cloudData && cloudData.length === 0) {
-            // クラウドが空の場合はローカルキャッシュまたはデフォルトをシード保存
-            const local = JSON.parse(localStorage.getItem(LOCAL_RECIPES_KEY) || 'null') || DEFAULT_RECIPES;
-            for (const r of local) {
-              await supabaseSync.saveRecipe(supabase_url, supabase_anon_key, sync_key, r).catch(() => {});
-            }
-            setRecipes(local);
-            localStorage.setItem(LOCAL_RECIPES_KEY, JSON.stringify(local));
             return;
           }
         } catch (syncErr) {
@@ -272,15 +264,18 @@ export function useRecipes() {
         setCurrentRecipe(filtered[0] || null);
       }
 
-      // Supabase同期削除
+      // Supabase同期削除（確実にawait）
       const settings = getStoredSettings();
       if (settings.supabase_url && settings.supabase_anon_key && settings.sync_key) {
-        supabaseSync.deleteRecipe(settings.supabase_url, settings.supabase_anon_key, settings.sync_key, id).catch(console.error);
+        await supabaseSync.deleteRecipe(settings.supabase_url, settings.supabase_anon_key, settings.sync_key, id).catch((err) => {
+          console.error('Supabase delete error:', err);
+        });
       }
 
       // サーバーAPI削除
       recipesApi.delete(id).catch(() => {});
     } catch (err) {
+      console.error('Failed to remove recipe:', err);
       setError(err.message);
     }
   }, [recipes, currentRecipe]);
