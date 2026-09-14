@@ -56,7 +56,6 @@ const DEFAULT_MARUMI_RECIPE = {
       ],
       text: "炊飯釜に豚バラスライス（切らずにそのまま）を入れ、醤油、みりん、料理酒、砂糖、おろししょうがを加えて全体をよく和える。",
       technique: "【包丁不要・切る工程なし】豚バラスライスは切らずにそのまま投入します。調味料を直接お肉に和えることで、角煮風のコク深い旨味がしっかり染み込みます。",
-      stepImage: "https://img.youtube.com/vi/uG4k7DDICas/hqdefault.jpg",
       tip: "お肉を一口大に切る必要は一切ありません。炊飯後にしゃもじで混ぜると自然にホロホロと崩れます。"
     },
     {
@@ -71,7 +70,6 @@ const DEFAULT_MARUMI_RECIPE = {
       ],
       text: "和えた豚肉の上に洗った白米（2合）を被せるように平らに敷き、ほんだし（大さじ1）を振り入れ、水を2.5合の目盛り線まで注いで通常炊飯をスタートする。",
       technique: "【水加減の黄金比】お肉の上にお米を被せ、水を「2.5合の線」まで注ぐことで、お米に芯が残らずふっくら炊き上がります。",
-      stepImage: "https://images.unsplash.com/photo-1546549032-9571cd6b27df?w=600&q=80",
       tip: "炊飯器は通常炊飯モードでOKです。"
     },
     {
@@ -86,7 +84,6 @@ const DEFAULT_MARUMI_RECIPE = {
       ],
       text: "炊き上がったら、底からすくい上げるようにしゃもじで全体をさっくりかき混ぜる。お茶碗に盛り付け、お好みできざみねぎとゆで卵、そして動画おすすめの練りからしを添えて完成！",
       technique: "【仕上げ】全体を混ぜると豚肉が柔らかくほぐれてご飯と一体化します。おこげも一緒に混ぜ込むと香ばしさが格段にアップします。",
-      stepImage: "https://images.unsplash.com/photo-1612874742237-6526221588e3?w=600&q=80",
       tip: "【動画実食の裏技】動画内でも紹介されている通り、練りからしを豚肉に少しつけて食べると、角煮感が一気に跳ね上がって驚くほど美味しくなります！"
     }
   ]
@@ -262,6 +259,12 @@ export function useRecipes() {
                   isFavorite: r.isFavorite !== undefined ? r.isFavorite : true,
                 };
               }
+              if (r.youtubeId && r.steps) {
+                return {
+                  ...r,
+                  steps: r.steps.map(({ stepImage, ...rest }) => rest),
+                };
+              }
               return r;
             });
             const finalList = hasMarumi ? updatedCloud : [DEFAULT_MARUMI_RECIPE, ...updatedCloud];
@@ -298,6 +301,12 @@ export function useRecipes() {
               ...DEFAULT_MARUMI_RECIPE,
               id: r.id,
               isFavorite: r.isFavorite !== undefined ? r.isFavorite : true,
+            };
+          }
+          if (r.youtubeId && r.steps) {
+            return {
+              ...r,
+              steps: r.steps.map(({ stepImage, ...rest }) => rest),
             };
           }
           return r;

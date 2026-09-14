@@ -538,7 +538,7 @@ export default function RecipeDetail({
                   </div>
                 )}
 
-                {step.stepImage && (
+                {!recipe.youtubeId && step.stepImage && (
                   <div className="step-img-box">
                     <img src={step.stepImage} alt={`工程 ${step.num} 写真`} className="step-thumb" />
                   </div>
