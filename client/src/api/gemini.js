@@ -5,27 +5,26 @@
  */
 
 const RECIPE_PROMPT_SYSTEM = `
-あなたはプロの料理研究家兼レシピ解析AIです。
-入力された情報（YouTube概要欄テキスト、調理動画の字幕・説明、メモなど）から料理レシピを正確に構造化し、必ず指定されたJSONフォーマットのみを出力してください。
-特定の料理（角煮やパスタ等）に対する先入観は一切捨て、入力されたテキストのみに厳格に従ってください。
+あなたは世界最高峰のレシピ解析AIです。
+動画の映像・音声、および入力テキストから、料理レシピを寸分の狂いもなく正確に構造化し、必ず指定されたJSONフォーマットのみを出力してください。
+推測や一般的な知識による補完（ハルシネーション）は一切禁止です。
 
-【最重要遵守事項：ハルシネーション（勝手な創作・推測・具材捏造・工程追加）の完全厳禁】
-1. 食材・調味料の100%忠実な抽出（勝手な追加・変更の完全禁止）:
-   - 入力テキストや概要欄に記載された食材・調味料・部位のみを抽出してください。
-   - 入力に記載されていない具材（水、油、調味料、長ネギ、生姜、ニンニク、ハーブ、薬味など）は、どんなに料理として一般的・常識的であっても【絶対に1つも追加してはなりません】。
-   - 食材の部位・形状を勝手に変更することは厳禁です（例: 豚バラスライス肉・薄切り肉を勝手にブロック肉に変えたり、鶏むねを鶏ももに変えるなど）。記載通りの食材名・部位を出力してください。
+【絶対厳守ルール：ハルシネーション（勝手な創作・捏造・工程追加）の完全根絶】
+1. 切る工程・カットの捏造は厳禁:
+   - 動画やテキストで包丁を使って切っていない食材（豚バラスライス肉、薄切り肉、ひき肉、カット野菜など）について、勝手に手順（steps）で「切る」「カットする」「一口大に切る」「刻む」などの工程を入れてはなりません。
+   - パックからそのまま入れる、切らずにそのまま炊飯器やフライパン・鍋に投入する料理が多数あります。動画・テキストにない「切る工程」は絶対に1文字たりとも書かないでください。
 
-2. 切る工程・下処理工程の勝手な捏造・追加の絶対禁止:
-   - 入力テキストで明示的に「切る」「カットする」「一口大にする」「刻む」と指示されていない食材について、勝手に切断工程や下処理工程をでっち上げて手順（steps）に追加してはなりません。
-   - スライス肉やひき肉、カット済み食材、切らずにそのままフライパンや鍋・レンジに入れて調理するレシピが多数存在します。入力に指示がないカット工程・下準備は絶対に含めないでください。
+2. 材料・調味料の勝手な追加・変更の完全禁止:
+   - 動画・テキストで明示されている食材・調味料のみを100%忠実に抽出してください。
+   - 言及されていない具材（水、油、生姜、長ネギ、ニンニク、塩コショウ、薬味など）は、どんなに料理として一般的であっても【絶対に1つも追加してはなりません】。
+   - スライス肉をブロック肉に変えたり、部位や肉の種類を勝手に変更することは厳禁です。
 
-3. 分量表記の忠実性:
-   - 概要欄や入力テキストに記載されている分量（例: 200g、大さじ1、少々など）を一字一句そのまま出力してください。
-   - 記載のない分量は勝手に数値を捏造せず「適量」または「お好みで」としてください。一般的な黄金比などに勝手に書き換えてはいけません。
+3. 分量の絶対正確性:
+   - 動画内の発言や概要欄に記載された分量（大さじ、小さじ、グラム、個数など）をそのまま正確に出力してください。一般的な比率に勝手に書き換えてはいけません。
 
 4. 手順（steps）とタイムスタンプ:
-   - 手順は入力テキストに実際に書かれている調理アクションのみを順序立てて構成してください。
-   - 各調理ステップには、動画内の該当シーンの開始秒数（timeSec: 数値）と、分秒表記（timeDisplay: "01:25"形式）を必ず設定してください。
+   - 動画内で行われている実際のアクションのみを時系列に沿って記載してください。動画にない無関係な下処理は含めないでください。
+   - 各ステップには、該当シーンの開始秒数（timeSec）と分秒表記（timeDisplay、例: "00:35"）を設定してください。
 
 【出力必須JSONスキーマ】
 {
@@ -34,29 +33,29 @@ const RECIPE_PROMPT_SYSTEM = `
   "baseServings": 1,
   "groupKey": "pasta または nabe または rice または other",
   "groupName": "グループ表示名（例: 🍝 パスタ系、🍚 ご飯・肉系、🍲 鍋・汁物系、🥗 その他）",
-  "coverImage": "料理のイメージ写真URL",
-  "myArrangement": "料理のポイントやアレンジのコツ",
+  "coverImage": "料理の写真URL",
+  "myArrangement": "料理のポイントやコツ",
   "crosscheck": {
     "hasDiff": false,
-    "title": "AI照合完了",
-    "desc": "概要欄・動画情報と材料・手順の整合性を確認しました。"
+    "title": "照合完了",
+    "desc": "動画・テキストと整合性を確認しました。"
   },
   "ingredients": [
     {
       "name": "食材・調味料名",
-      "amount": "分量表記（例: 150g, 大さじ1, 適量）",
+      "amount": "分量表記（例: 150g, 大さじ1）",
       "baseAmount": 150,
-      "unit": "単位（例: g, 大さじ, 個）"
+      "unit": "単位"
     }
   ],
   "steps": [
     {
       "num": 1,
-      "text": "具体的な手順説明（入力にないカット等の工程は勝手に入れない）",
+      "text": "具体的な手順説明（切ると言っていない食材は絶対に切る工程にしないこと）",
       "timeSec": 0,
       "timeDisplay": "00:00",
-      "technique": "言及されている場合のみ切り方やコツ",
-      "tip": "失敗しないための注意点",
+      "technique": "言及されている場合のみコツ",
+      "tip": "注意点",
       "timerSeconds": 0,
       "usedIngredients": [
         { "name": "この工程で使う食材名", "amount": "分量" }
@@ -74,7 +73,7 @@ export async function analyzeWithGemini(apiKey, inputText, options = {}) {
   const cleanKey = apiKey.trim();
   const preferredModel = (options.model || 'gemini-3.8-flash').trim();
 
-  // 試行するモデル候補のチェーン（指定モデルが利用不可・権限外の場合に即座にフォールバック）
+  // 試行するモデル候補のチェーン
   const candidateModels = [
     preferredModel,
     'gemini-2.5-flash',
@@ -96,13 +95,24 @@ ${inputText}
 
   for (const currentModel of candidateModels) {
     try {
-      // === 方式A: Google公式 最新 Interactions API（2026年仕様） ===
+      // === 方式A: Google公式 最新 Interactions API（YouTube動画URL直接マルチモーダル解析） ===
       try {
         const iEndpoint = `https://generativelanguage.googleapis.com/v1beta/interactions?key=${cleanKey}`;
+        
+        // YouTube URLがある場合、動画フレーム・音声・字幕をマルチモーダル直接解析！
+        let interactionInput;
+        if (options.youtubeUrl) {
+          interactionInput = [
+            { type: 'text', text: `${RECIPE_PROMPT_SYSTEM}\n\n${userPrompt}` },
+            { type: 'video', uri: options.youtubeUrl.trim() },
+          ];
+        } else {
+          interactionInput = `${RECIPE_PROMPT_SYSTEM}\n\n${userPrompt}`;
+        }
+
         const iPayload = {
           model: currentModel,
-          system_instruction: RECIPE_PROMPT_SYSTEM,
-          input: userPrompt,
+          input: interactionInput,
           response_format: {
             type: 'text',
             mime_type: 'application/json',
@@ -111,7 +121,10 @@ ${inputText}
 
         const iRes = await fetch(iEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': cleanKey,
+          },
           body: JSON.stringify(iPayload),
         });
 
@@ -124,9 +137,11 @@ ${inputText}
             successfulModel = currentModel;
             break;
           }
+        } else {
+          console.warn(`Interactions API failed with status ${iRes.status}`);
         }
       } catch (iErr) {
-        // Interactions API がブラウザCORS等で失敗した場合は generateContent へ進む
+        console.warn('Interactions API call error:', iErr);
       }
 
       // === 方式B: 公式標準 generateContent API（JSON構造化出力モード） ===
@@ -142,7 +157,7 @@ ${inputText}
             },
           ],
           generationConfig: {
-            temperature: 0.1,
+            temperature: 0.1, // 創造性を抑えて忠実性を極限まで高める
             responseMimeType: 'application/json',
           },
         };
@@ -164,7 +179,6 @@ ${inputText}
 
         if (candidate) {
           const parts = candidate.content?.parts || [];
-          // 思考モデルの thought: true パートを除外し、本文JSONを抽出
           const answerParts = parts.filter((p) => p.text && !p.thought);
           if (answerParts.length > 0) {
             rawText = answerParts.map((p) => p.text).join('\n').trim();
@@ -184,7 +198,6 @@ ${inputText}
     } catch (err) {
       console.warn(`Model ${currentModel} failed:`, err.message);
       lastError = err;
-      // 次のモデルへフォールバックして自動再試行
     }
   }
 

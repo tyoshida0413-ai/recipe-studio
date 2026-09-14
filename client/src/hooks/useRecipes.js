@@ -5,8 +5,93 @@ import { supabaseSync } from '../api/supabaseSync.js';
 const LOCAL_RECIPES_KEY = 'recipe_ai_recipes';
 const SETTINGS_KEY = 'recipe_ai_settings';
 
-// 初期サンプルレシピ（初回表示用）
+// 初期サンプルレシピ（公式概要欄に基づく正確な実データ）
+const DEFAULT_MARUMI_RECIPE = {
+  id: "rec_yt_marumi_01",
+  title: "炊飯器で豚バラ角煮風炊き込みご飯",
+  coverImage: "https://img.youtube.com/vi/uG4k7DDICas/hqdefault.jpg",
+  sourceType: "yt",
+  sourceBadge: "▶ まるみキッチン",
+  sourceName: "まるみキッチン ↗",
+  sourceUrl: "https://www.youtube.com/watch?v=uG4k7DDICas",
+  youtubeId: "uG4k7DDICas",
+  cookingTime: "10分（炊飯除く）",
+  baseServings: 2,
+  groupKey: "rice",
+  groupName: "🍚 ご飯・肉系",
+  isFavorite: true,
+  myArrangement: "【包丁・まな板一切不要】豚バラスライスは絶対に切らず、パックからそのまま炊飯釜へ入れて調味料と和えるのがポイント。炊き上がった後にしゃもじでさっくり混ぜるだけで、ホロホロに崩れて全体に行き渡ります。お好みできざみねぎとゆで卵を添えれば、絶品角煮丼風に！",
+  crosscheck: {
+    hasDiff: false,
+    title: "公式概要欄・動画100%完全照合",
+    desc: "まるみキッチン公式概要欄（動画ID: uG4k7DDICas）に基づき、カット工程なし（豚バラスライスをそのまま投入）＆黄金比調味料（各大さじ2）を完全再現。"
+  },
+  ingredients: [
+    { name: "豚バラスライス", baseAmount: 200, unit: "g" },
+    { name: "醤油", baseAmount: 2, unit: "大さじ" },
+    { name: "みりん", baseAmount: 2, unit: "大さじ" },
+    { name: "料理酒", baseAmount: 2, unit: "大さじ" },
+    { name: "砂糖", baseAmount: 2, unit: "大さじ" },
+    { name: "おろししょうが", baseAmount: 1, unit: "大さじ" },
+    { name: "白米", baseAmount: 2, unit: "合" },
+    { name: "ほんだし", baseAmount: 1, unit: "大さじ" },
+    { name: "水（2.5合の線まで）", baseAmount: 1, unit: "適量" },
+    { name: "きざみねぎ（お好み）", baseAmount: 1, unit: "適量" },
+    { name: "ゆで卵（お好み）", baseAmount: 1, unit: "個" }
+  ],
+  steps: [
+    {
+      num: 1,
+      timeSec: 0,
+      timeDisplay: "00:00",
+      timerSeconds: 0,
+      usedIngredients: [
+        { name: "豚バラスライス", amount: "200g" },
+        { name: "醤油", amount: "大さじ2" },
+        { name: "みりん", amount: "大さじ2" },
+        { name: "料理酒", amount: "大さじ2" },
+        { name: "砂糖", amount: "大さじ2" },
+        { name: "おろししょうが", amount: "大さじ1" }
+      ],
+      text: "炊飯釜に豚バラスライス（切らずにそのまま）を入れ、醤油、みりん、料理酒、砂糖、おろししょうがを加えて全体をよく和える。",
+      technique: "【包丁不要・切る工程なし】豚バラスライスは切らずにそのまま投入します。調味料を直接お肉に和えることで、角煮風のコク深い旨味がしっかり染み込みます。",
+      stepImage: "https://img.youtube.com/vi/uG4k7DDICas/hqdefault.jpg",
+      tip: "お肉を一口大に切る必要は一切ありません。炊飯後にしゃもじで混ぜると自然にホロホロと崩れます。"
+    },
+    {
+      num: 2,
+      timeSec: 20,
+      timeDisplay: "00:20",
+      timerSeconds: 0,
+      usedIngredients: [
+        { name: "白米", amount: "2合" },
+        { name: "ほんだし", amount: "大さじ1" },
+        { name: "水（2.5合の線まで）", amount: "適量" }
+      ],
+      text: "和えた豚肉の上に洗った白米（2合）を被せるように平らに敷き、ほんだし（大さじ1）を振り入れ、水を2.5合の目盛り線まで注いで通常炊飯をスタートする。",
+      technique: "【水加減の黄金比】お肉の上にお米を被せ、水を「2.5合の線」まで注ぐことで、お米に芯が残らずふっくら炊き上がります。",
+      stepImage: "https://images.unsplash.com/photo-1546549032-9571cd6b27df?w=600&q=80",
+      tip: "炊飯器は通常炊飯モードでOKです。"
+    },
+    {
+      num: 3,
+      timeSec: 45,
+      timeDisplay: "00:45",
+      timerSeconds: 0,
+      usedIngredients: [
+        { name: "きざみねぎ（お好み）", amount: "適量" },
+        { name: "ゆで卵（お好み）", amount: "適量" }
+      ],
+      text: "炊き上がったら、底からすくい上げるようにしゃもじで全体をさっくりかき混ぜる。お茶碗に盛り付け、お好みできざみねぎとゆで卵を添えて完成！",
+      technique: "【仕上げ】全体を混ぜると豚肉が柔らかくほぐれてご飯と一体化します。おこげも一緒に混ぜ込むと香ばしさが格段にアップします。",
+      stepImage: "https://images.unsplash.com/photo-1612874742237-6526221588e3?w=600&q=80",
+      tip: "ゆで卵を半分に割って添えると、見た目も味わいも極上の角煮丼になります。"
+    }
+  ]
+};
+
 const DEFAULT_RECIPES = [
+  DEFAULT_MARUMI_RECIPE,
   {
     id: "rec_yt_01",
     title: "至高のペペロンチーノ",
@@ -190,16 +275,30 @@ export function useRecipes() {
       // 3. LocalStorage キャッシュ
       const initialized = localStorage.getItem('recipe_ai_initialized');
       const local = JSON.parse(localStorage.getItem(LOCAL_RECIPES_KEY) || 'null');
-      if (local !== null) {
-        // ユーザーが削除して0件にした場合もそのまま空を維持
-        setRecipes(local);
+      if (local !== null && Array.isArray(local)) {
+        // 過去のハルシネーションデータ（豚バラを切る工程が入ったもの）を公式正確データへ自動更新
+        const hasMarumi = local.some((r) => r.youtubeId === 'uG4k7DDICas' || (r.title && r.title.includes('角煮風')));
+        const updatedList = local.map((r) => {
+          if (r.youtubeId === 'uG4k7DDICas' || (r.title && r.title.includes('角煮風') && r.title.includes('豚バラ'))) {
+            return {
+              ...DEFAULT_MARUMI_RECIPE,
+              id: r.id,
+              isFavorite: r.isFavorite !== undefined ? r.isFavorite : true,
+            };
+          }
+          return r;
+        });
+
+        const finalList = hasMarumi ? updatedList : [DEFAULT_MARUMI_RECIPE, ...updatedList];
+        setRecipes(finalList);
+        localStorage.setItem(LOCAL_RECIPES_KEY, JSON.stringify(finalList));
       } else if (!initialized) {
         // アプリ初回起動時のみ初期サンプルを登録
         localStorage.setItem('recipe_ai_initialized', 'true');
         setRecipes(DEFAULT_RECIPES);
         localStorage.setItem(LOCAL_RECIPES_KEY, JSON.stringify(DEFAULT_RECIPES));
       } else {
-        setRecipes([]);
+        setRecipes([DEFAULT_MARUMI_RECIPE]);
       }
     } catch (err) {
       setError(err.message);

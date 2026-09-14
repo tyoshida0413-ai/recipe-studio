@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { analyzeWithGemini } from '../api/gemini.js';
 import { fetchYouTubeInfo, cleanRecipeTitle } from '../utils/youtube.js';
 import EditModal from './EditModal.jsx';
+import ReAnalyzeModal from './ReAnalyzeModal.jsx';
 
 export default function RecipeDetail({
   recipe,
@@ -19,6 +20,7 @@ export default function RecipeDetail({
   const [isReAnalyzing, setIsReAnalyzing] = useState(false);
   const [reAnalyzeStatus, setReAnalyzeStatus] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isReAnalyzeModalOpen, setIsReAnalyzeModalOpen] = useState(false);
 
   if (!recipe) {
     return (
@@ -63,11 +65,17 @@ export default function RecipeDetail({
     }
   };
 
-  const handleReAnalyzeYouTube = async () => {
+  // 再生成モーダルを開く
+  const handleOpenReAnalyze = () => {
     if (!recipe.youtubeId) {
       alert('YouTube動画が連携されていません');
       return;
     }
+    setIsReAnalyzeModalOpen(true);
+  };
+
+  // モーダルから確定された概要欄テキストとともにGemini再生成を実行
+  const handleExecuteReAnalyze = async (descriptionText, meta) => {
     const settings = (() => {
       try {
         return JSON.parse(localStorage.getItem('recipe_ai_settings') || '{}');
@@ -82,27 +90,24 @@ export default function RecipeDetail({
     }
 
     setIsReAnalyzing(true);
-    setReAnalyzeStatus('動画情報を取得中...');
+    setReAnalyzeStatus('動画情報と概要欄をもとに高精度解析中...');
     try {
-      const info = await fetchYouTubeInfo(recipe.youtubeId);
-      const videoTitle = info?.title || recipe.title || '';
-      const authorName = info?.author || recipe.sourceName || '';
-      const videoDesc = info?.description || '';
+      const videoTitle = meta?.title || recipe.title || '';
+      const authorName = meta?.author || recipe.sourceName || '';
+      const videoDesc = descriptionText || meta?.description || '';
 
-      setReAnalyzeStatus(videoTitle ? `「${videoTitle}」からレシピをAI生成中...` : 'AIレシピを解析中...');
-
-      let prompt = `以下のYouTube料理動画から、美味しい本格レシピを正確に構造化してJSONで出力してください。\n\n` +
+      let prompt = `以下のYouTube料理動画から、レシピを正確に構造化してJSONで出力してください。\n\n` +
         (videoTitle ? `■ 動画タイトル: 『${videoTitle}』\n` : '') +
         (authorName ? `■ 投稿者 / チャンネル: 『${authorName}』\n` : '') +
         `■ 動画URL: https://www.youtube.com/watch?v=${recipe.youtubeId}\n\n`;
 
       if (videoDesc) {
-        prompt += `■ 動画の概要欄テキスト（投稿者が公式に記載したレシピ・材料情報）:\n${videoDesc}\n\n` +
-          `【最重要：厳格遵守ルール（捏造・勝手な具材追加・工程捏造の完全禁止）】\n` +
-          `1. 概要欄に記載された食材・部位・調味料と分量を【100%忠実】に出力してください。\n` +
-          `2. 【切る工程・下処理の捏造厳禁】: 概要欄やテキストで明示的に切る・刻むと指示されていない食材を勝手に「一口大に切る」等のカット工程として手順に追加しないでください。\n` +
-          `3. 【具材・調味料の追加厳禁】: 概要欄に書かれていない食材（香味野菜、水、油、調味料、薬味など）は、どんなに一般的・常識的であっても絶対に1つも追加しないでください。\n` +
-          `4. 【分量の捏造厳禁】: 概要欄記載の数値をそのまま正確に出力し、記載のないものは勝手に数値を捏造せず「適量」としてください。\n` +
+        prompt += `■ 動画の公式概要欄テキスト（材料・分量・作り方）:\n${videoDesc}\n\n` +
+          `【最重要：絶対厳守ルール（概要欄に100%忠実、捏造・勝手な具材追加・工程捏造の完全禁止）】\n` +
+          `1. 概要欄に記載された食材・調味料・分量を【100%忠実】に出力してください。記載のあるものは1つも漏らさず、記載のないものは1つも足さないでください。\n` +
+          `2. 【切る工程・カットの捏造厳禁】: 概要欄や動画で「切る」「カットする」と指示されていない食材（豚バラスライス肉、薄切り肉、カット野菜など）について、勝手に手順（steps）で「一口大に切る」「切る」などの工程を入れてはなりません。パックからそのまま入れる工程にしてください。\n` +
+          `3. 【具材・調味料の追加厳禁】: 概要欄に書かれていない食材（水、油、生姜、長ネギ、ニンニク、塩コショウ、薬味など）は、どんなに料理として一般的であっても【絶対に1つも追加してはなりません】。\n` +
+          `4. 【分量の捏造厳禁】: 概要欄記載の数値をそのまま正確に出力してください。\n` +
           `5. 【部位・種類の改変厳禁】: スライス肉をブロック肉に変えるなど、勝手な変更は一切禁止です。\n` +
           `6. 調理工程は概要欄や動画の流れに沿って整理し、各工程の開始秒数（timeSec: 数値, timeDisplay: "01:25"形式）を付与してください。\n`;
       } else {
@@ -130,12 +135,17 @@ export default function RecipeDetail({
         myArrangement: reGenerated.myArrangement || recipe.myArrangement || '',
         ingredients: reGenerated.ingredients || [],
         steps: reGenerated.steps || [],
-        crosscheck: reGenerated.crosscheck || { hasDiff: false, title: 'AI照合完了', desc: '動画タイトルからレシピを再生成しました' },
+        crosscheck: reGenerated.crosscheck || {
+          hasDiff: false,
+          title: videoDesc ? '概要欄・動画照合完了' : 'AI生成完了',
+          desc: videoDesc ? '概要欄の公式情報に基づき、忠実な分量と工程で再生成しました。' : '動画タイトルからレシピを生成しました。',
+        },
         sourceName: authorName || recipe.sourceName || 'YouTube',
-        coverImage: info?.thumbnail || recipe.coverImage,
+        coverImage: meta?.thumbnail || recipe.coverImage,
       };
 
       await onUpdateRecipe(recipe.id, updatedData);
+      setIsReAnalyzeModalOpen(false);
     } catch (err) {
       alert(`レシピの再生成に失敗しました:\n\n${err.message || 'エラーが発生しました'}\n\n※ 右上の「⚙️ API設定」からGemini APIキーの接続テストやモデル変更をお試しください。`);
     } finally {
@@ -203,7 +213,7 @@ export default function RecipeDetail({
             {recipe.youtubeId && (
               <button
                 className="btn btn-secondary btn-small"
-                onClick={handleReAnalyzeYouTube}
+                onClick={handleOpenReAnalyze}
                 disabled={isReAnalyzing}
                 style={{
                   background: '#f0f9ff',
@@ -211,7 +221,7 @@ export default function RecipeDetail({
                   color: '#0284c7',
                   fontWeight: 600,
                 }}
-                title="動画タイトルからAIで材料・工程を再生成します"
+                title="動画の概要欄テキストをもとに忠実な材料・工程を再生成します"
               >
                 {isReAnalyzing ? (reAnalyzeStatus || '⏳ 再生成中...') : '🔄 動画からAI再生成'}
               </button>
@@ -282,7 +292,7 @@ export default function RecipeDetail({
           </div>
           <button
             className="btn btn-primary"
-            onClick={handleReAnalyzeYouTube}
+            onClick={handleOpenReAnalyze}
             disabled={isReAnalyzing}
             style={{
               whiteSpace: 'nowrap',
@@ -550,6 +560,15 @@ export default function RecipeDetail({
         onClose={() => setIsEditOpen(false)}
         recipe={recipe}
         onSave={onUpdateRecipe}
+      />
+
+      {/* 動画からAI再生成モーダル（概要欄コピペ照合対応） */}
+      <ReAnalyzeModal
+        isOpen={isReAnalyzeModalOpen}
+        onClose={() => setIsReAnalyzeModalOpen(false)}
+        recipe={recipe}
+        onConfirm={handleExecuteReAnalyze}
+        isReAnalyzing={isReAnalyzing}
       />
     </main>
   );
