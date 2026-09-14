@@ -85,14 +85,31 @@ export default function RecipeDetail({
       const info = await fetchYouTubeInfo(recipe.youtubeId);
       const videoTitle = info?.title || '';
       const authorName = info?.author || '';
+      const videoDesc = info?.description || '';
 
       setReAnalyzeStatus(videoTitle ? `「${videoTitle}」からレシピをAI生成中...` : 'AIレシピを解析中...');
 
-      const prompt = `以下のYouTube料理動画から、美味しい本格レシピを正確に構造化してJSONで出力してください。\n\n` +
+      let prompt = `以下のYouTube料理動画から、美味しい本格レシピを正確に構造化してJSONで出力してください。\n\n` +
         (videoTitle ? `■ 動画タイトル: 『${videoTitle}』\n` : '') +
         (authorName ? `■ 投稿者 / チャンネル: 『${authorName}』\n` : '') +
-        `■ 動画URL: https://www.youtube.com/watch?v=${recipe.youtubeId}\n\n` +
-        `【指示】\n動画タイトル『${videoTitle}』から料理を特定し、最高に美味しい黄金比レシピを作成してください。必要な材料と正確な分量（調味料含む）、切り方や下処理、丁寧な調理工程、タイマー秒数、プロのコツを網羅してください。titleには装飾記号を除いた綺麗な料理名を設定してください。`;
+        `■ 動画URL: https://www.youtube.com/watch?v=${recipe.youtubeId}\n\n`;
+
+      if (videoDesc) {
+        prompt += `■ 動画の概要欄テキスト（投稿者が公式に記載したレシピ・材料情報）:\n${videoDesc}\n\n` +
+          `【最重要：厳格遵守ルール（捏造・勝手な改変の完全禁止）】\n` +
+          `1. 概要欄に記載された食材・部位・調味料と正確な分量を【100%忠実】に出力してください。\n` +
+          `2. 【肉の部位の勝手な変更は厳禁】: 「角煮風」という言葉に惑わされて勝手に「豚バラブロック肉」にしてはいけません！概要欄や動画で「豚バラスライス」「豚バラ薄切り肉」と記載されている場合は必ず薄切り・スライス肉として出力してください。\n` +
+          `3. 概要欄に記載されていない余計な食材（長ネギの青い部分、生姜の薄切り、八角、ゆで卵など）を勝手に追加・捏造してはいけません。\n` +
+          `4. 調味料の分量（大さじ、小さじ、グラム等）も概要欄記載の数値をそのまま正確に守り、勝手に比率を変えないでください。\n` +
+          `5. 調理工程は概要欄や動画の流れに沿って、初心者にも分かりやすい丁寧なステップに整理してください。\n`;
+      } else {
+        prompt += `【最重要：厳格遵守ルール（ハルシネーションの完全禁止）】\n` +
+          `1. 動画タイトル『${videoTitle}』から料理を特定してください。\n` +
+          `2. 【肉の部位に関する厳重注意】: 本レシピは手軽に作れる炊き込みご飯レシピです。「角煮風」とあってもブロック肉ではなく【豚バラスライス（薄切り肉）】を使用したレシピとして作成してください。ブロック肉への変更は固く禁じます。\n` +
+          `3. 具材の捏造禁止: 余計な香味野菜やブロック肉用の下茹で具材（ネギの青い部分など）は一切入れず、豚バラスライスとお米、基本の調味料（醤油、みりん、酒、砂糖など）のみでシンプルかつ黄金比の分量にしてください。\n` +
+          `4. 調理工程も炊飯器で炊くだけのシンプルで忠実な工程にしてください。\n`;
+      }
+      prompt += `・titleには動画タイトルの装飾記号を除いた綺麗な料理名を設定してください。\n`;
 
       const reGenerated = await analyzeWithGemini(geminiKey, prompt, {
         model: settings.gemini_model || 'gemini-3.8-flash',

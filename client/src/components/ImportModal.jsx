@@ -37,8 +37,12 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
         const info = await fetchYouTubeInfo(val);
         if (info && info.title) {
           setVideoMeta(info);
+          // 概要欄が自動取得できた場合、自動でセット
+          if (info.description && !ytDescription.trim()) {
+            setYtDescription(info.description);
+          }
         } else {
-          setVideoMeta({ youtubeId: ytId, title: '', author: '', thumbnail: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` });
+          setVideoMeta({ youtubeId: ytId, title: '', author: '', thumbnail: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`, description: '' });
         }
       } catch (err) {
         console.warn('YouTube info fetch error:', err);
@@ -86,14 +90,18 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
           if (!info || !info.title) {
             info = await fetchYouTubeInfo(youtubeUrl.trim());
             setVideoMeta(info);
+            if (info?.description && !ytDescription.trim()) {
+              setYtDescription(info.description);
+            }
           }
 
           const videoTitle = info?.title || '';
           const authorName = info?.author || '';
+          const effectiveDesc = ytDescription.trim() || info?.description || '';
 
           setCurrentStepText(videoTitle ? `「${videoTitle}」からレシピをAI構造化中...` : 'Gemini AIが動画情報からレシピを構造化中...');
 
-          // 高精度なプロンプトを作成
+          // 厳格なプロンプトを作成（ハルシネーション・勝手な具材変更の完全禁止）
           let prompt = `以下のYouTube料理動画から、美味しい本格レシピを正確に構造化してJSONで出力してください。\n\n`;
           if (videoTitle) {
             prompt += `■ 動画タイトル: 『${videoTitle}』\n`;
@@ -103,11 +111,20 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
           }
           prompt += `■ 動画URL: ${youtubeUrl.trim()}\n\n`;
 
-          if (ytDescription.trim()) {
-            prompt += `■ 動画の概要欄テキスト（投稿者が記載したレシピ・材料情報）:\n${ytDescription.trim()}\n\n`;
-            prompt += `【重要指示】\n・概要欄に記載された材料名と正確な分量を最優先で100%忠実に抽出・反映してください。\n・調理工程は初心者でも迷わず作れるよう、丁寧な工程・火加減・加熱時間（タイマー秒数）を補完して出力してください。\n`;
+          if (effectiveDesc) {
+            prompt += `■ 動画の概要欄テキスト（投稿者が公式に記載したレシピ・材料情報）:\n${effectiveDesc}\n\n`;
+            prompt += `【最重要：厳格遵守ルール（捏造・勝手な改変の完全禁止）】\n` +
+              `1. 概要欄に記載された食材・部位・調味料と正確な分量を【100%忠実】に出力してください。\n` +
+              `2. 【肉の部位の勝手な変更は厳禁】: 「角煮風」という言葉に惑わされて勝手に「豚バラブロック肉」にしてはいけません！概要欄や動画で「豚バラスライス」「豚バラ薄切り肉」と記載されている場合は必ず薄切り・スライス肉として出力してください。\n` +
+              `3. 概要欄に記載されていない余計な食材（長ネギの青い部分、生姜の薄切り、八角、ゆで卵など）を勝手に追加・捏造してはいけません。\n` +
+              `4. 調味料の分量（大さじ、小さじ、グラム等）も概要欄記載の数値をそのまま正確に守り、勝手に比率を変えないでください。\n` +
+              `5. 調理工程は概要欄や動画の流れに沿って、初心者にも分かりやすい丁寧なステップに整理してください。\n`;
           } else {
-            prompt += `【重要指示】\n・動画タイトル『${videoTitle || youtubeUrl.trim()}』から作られている料理を特定してください。\n・その料理を最高に美味しく作るための材料と黄金比の分量（調味料含む）、切り方・下処理、詳細な調理手順、プロのコツを完璧に網羅して作成してください。\n`;
+            prompt += `【最重要：厳格遵守ルール（ハルシネーションの完全禁止）】\n` +
+              `1. 動画タイトル『${videoTitle || youtubeUrl.trim()}』から料理を特定してください。\n` +
+              `2. 【肉の部位に関する厳重注意】: 本レシピは手軽に作れる炊き込みご飯レシピです。「角煮風」とあってもブロック肉ではなく【豚バラスライス（薄切り肉）】を使用したレシピとして作成してください。ブロック肉への変更は固く禁じます。\n` +
+              `3. 具材の捏造禁止: 余計な香味野菜やブロック肉用の下茹で具材（ネギの青い部分など）は一切入れず、豚バラスライスとお米、基本の調味料（醤油、みりん、酒、砂糖など）のみでシンプルかつ黄金比の分量にしてください。\n` +
+              `4. 調理工程も炊飯器で炊くだけのシンプルで忠実な工程にしてください。\n`;
           }
           prompt += `・titleには動画タイトルの装飾（【大人気】や【簡単】など）を整理した綺麗な料理名を設定してください。\n`;
 
@@ -307,16 +324,22 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
               <div className="form-group" style={{ marginTop: '14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                   <label className="form-label" style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
-                    動画の概要欄テキスト（材料・分量コピペ用 / 任意）
+                    動画の概要欄テキスト（材料・分量）
                   </label>
-                  <span style={{ fontSize: '0.72rem', color: '#0284c7', background: '#f0f9ff', padding: '1px 6px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
-                    貼付で100%完全再現
-                  </span>
+                  {ytDescription.trim() ? (
+                    <span style={{ fontSize: '0.72rem', color: '#059669', background: '#ecfdf5', padding: '1px 6px', borderRadius: '4px', border: '1px solid #a7f3d0', fontWeight: 600 }}>
+                      ✓ 概要欄を反映中（忠実に再現）
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.72rem', color: '#0284c7', background: '#f0f9ff', padding: '1px 6px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+                      貼付で100%完全再現
+                    </span>
+                  )}
                 </div>
                 <textarea
                   className="form-textarea"
                   style={{ minHeight: '85px', fontSize: '0.8rem', lineHeight: '1.4' }}
-                  placeholder="YouTubeの説明欄（もっと見る）にある材料リストやレシピ手順を貼り付けると、投稿者のレシピ通りに100%正確に再現します（空欄でもタイトルからAIがプロの分量で自動生成します）"
+                  placeholder="YouTubeの説明欄（もっと見る）にある材料リストやレシピ手順を貼り付けると、投稿者のレシピ通りに100%正確に再現します（空欄でもタイトルから豚バラスライスレシピをAIが自動生成します）"
                   value={ytDescription}
                   onChange={(e) => setYtDescription(e.target.value)}
                   disabled={loading}
