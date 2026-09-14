@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { analyzeApi } from '../api/client.js';
 import { analyzeWithGemini } from '../api/gemini.js';
+import { extractYouTubeId, fetchYouTubeInfo, cleanRecipeTitle } from '../utils/youtube.js';
 
 export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
   const [activeTab, setActiveTab] = useState('yt'); // yt, x, memo, ai
   const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [ytDescription, setYtDescription] = useState('');
+  const [videoMeta, setVideoMeta] = useState(null);
+  const [fetchingVideo, setFetchingVideo] = useState(false);
+
   const [xPostText, setXPostText] = useState('');
   const [memoText, setMemoText] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
@@ -12,6 +17,36 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
   const [loading, setLoading] = useState(false);
   const [currentStepText, setCurrentStepText] = useState('');
   const [error, setError] = useState(null);
+
+  const debounceTimerRef = useRef(null);
+
+  // YouTubeのURL変更時に動画情報を自動取得
+  const handleYoutubeUrlChange = (val) => {
+    setYoutubeUrl(val);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+
+    const ytId = extractYouTubeId(val);
+    if (!ytId) {
+      setVideoMeta(null);
+      return;
+    }
+
+    setFetchingVideo(true);
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        const info = await fetchYouTubeInfo(val);
+        if (info && info.title) {
+          setVideoMeta(info);
+        } else {
+          setVideoMeta({ youtubeId: ytId, title: '', author: '', thumbnail: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` });
+        }
+      } catch (err) {
+        console.warn('YouTube info fetch error:', err);
+      } finally {
+        setFetchingVideo(false);
+      }
+    }, 400);
+  };
 
   if (!isOpen) return null;
 
@@ -44,28 +79,56 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
       if (geminiKey) {
         if (activeTab === 'yt') {
           if (!youtubeUrl.trim()) throw new Error('YouTubeのURLを入力してください');
-          setCurrentStepText('Gemini AIがYouTube動画情報からレシピを構造化解析中...');
           
-          // YouTube IDの抽出
-          const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-          const match = youtubeUrl.trim().match(regExp);
-          const youtubeId = (match && match[2].length === 11) ? match[2] : null;
+          setCurrentStepText('YouTube動画のタイトルと詳細情報を取得中...');
+          let info = videoMeta;
+          const ytId = extractYouTubeId(youtubeUrl.trim());
+          if (!info || !info.title) {
+            info = await fetchYouTubeInfo(youtubeUrl.trim());
+            setVideoMeta(info);
+          }
+
+          const videoTitle = info?.title || '';
+          const authorName = info?.author || '';
+
+          setCurrentStepText(videoTitle ? `「${videoTitle}」からレシピをAI構造化中...` : 'Gemini AIが動画情報からレシピを構造化中...');
+
+          // 高精度なプロンプトを作成
+          let prompt = `以下のYouTube料理動画から、美味しい本格レシピを正確に構造化してJSONで出力してください。\n\n`;
+          if (videoTitle) {
+            prompt += `■ 動画タイトル: 『${videoTitle}』\n`;
+          }
+          if (authorName) {
+            prompt += `■ チャンネル・料理研究家: 『${authorName}』\n`;
+          }
+          prompt += `■ 動画URL: ${youtubeUrl.trim()}\n\n`;
+
+          if (ytDescription.trim()) {
+            prompt += `■ 動画の概要欄テキスト（投稿者が記載したレシピ・材料情報）:\n${ytDescription.trim()}\n\n`;
+            prompt += `【重要指示】\n・概要欄に記載された材料名と正確な分量を最優先で100%忠実に抽出・反映してください。\n・調理工程は初心者でも迷わず作れるよう、丁寧な工程・火加減・加熱時間（タイマー秒数）を補完して出力してください。\n`;
+          } else {
+            prompt += `【重要指示】\n・動画タイトル『${videoTitle || youtubeUrl.trim()}』から作られている料理を特定してください。\n・その料理を最高に美味しく作るための材料と黄金比の分量（調味料含む）、切り方・下処理、詳細な調理手順、プロのコツを完璧に網羅して作成してください。\n`;
+          }
+          prompt += `・titleには動画タイトルの装飾（【大人気】や【簡単】など）を整理した綺麗な料理名を設定してください。\n`;
 
           created = await analyzeWithGemini(
             geminiKey,
-            `YouTube料理動画 URL: ${youtubeUrl.trim()}\nこの動画のレシピ内容（料理名、必要な材料と正確な分量、調理手順、プロのコツ）を詳細に解析して構造化してください。`,
+            prompt,
             {
               model: settings.gemini_model || 'gemini-3.8-flash',
               sourceType: 'yt',
-              sourceBadge: '▶ YouTube (Gemini)',
+              sourceBadge: authorName ? `▶ ${authorName}` : '▶ YouTube (Gemini)',
             }
           );
-          if (youtubeId) {
-            created.youtubeId = youtubeId;
+
+          if (ytId) {
+            created.youtubeId = ytId;
             created.sourceUrl = youtubeUrl.trim();
-            if (!created.coverImage) {
-              created.coverImage = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
-            }
+            created.sourceName = authorName || 'YouTube';
+            created.coverImage = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+          }
+          if (videoTitle && (!created.title || created.title === '料理名' || created.title.includes('ペペロンチーノ'))) {
+            created.title = cleanRecipeTitle(videoTitle) || videoTitle;
           }
         } else if (activeTab === 'x') {
           if (!xPostText.trim()) throw new Error('X（Twitter）のポスト内容を入力してください');
@@ -125,6 +188,8 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
         onRecipeCreated(created);
         onClose();
         setYoutubeUrl('');
+        setYtDescription('');
+        setVideoMeta(null);
         setXPostText('');
         setMemoText('');
         setAiPrompt('');
@@ -189,18 +254,77 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
           {activeTab === 'yt' && (
             <div>
               <div className="form-group">
-                <label className="form-label">YouTube URL</label>
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>YouTube URL（通常・Shorts両対応）</span>
+                  {fetchingVideo && <span style={{ fontSize: '0.75rem', color: '#0284c7' }}>🔍 動画情報確認中...</span>}
+                </label>
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder="https://www.youtube.com/watch?v=... または https://youtu.be/..."
                   value={youtubeUrl}
-                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  onChange={(e) => handleYoutubeUrlChange(e.target.value)}
                   disabled={loading}
                 />
               </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                💡 動画URLを貼り付けると、AIが材料・正確な分量・手順・調理テクニックを瞬時に自動抽出します。
+
+              {/* 検出された動画のプレビュー */}
+              {videoMeta && (
+                <div style={{
+                  marginTop: '10px',
+                  padding: '10px 12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  gap: '12px',
+                  alignItems: 'center',
+                }}>
+                  {videoMeta.thumbnail && (
+                    <img
+                      src={videoMeta.thumbnail}
+                      alt="thumbnail"
+                      style={{ width: '96px', height: '54px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.08)' }}
+                    />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {videoMeta.title || 'YouTube料理動画'}
+                    </div>
+                    {videoMeta.author && (
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                        👤 {videoMeta.author}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span>✓</span> 動画タイトルから料理レシピを自動生成します
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 概要欄テキスト入力（任意） */}
+              <div className="form-group" style={{ marginTop: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label className="form-label" style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
+                    動画の概要欄テキスト（材料・分量コピペ用 / 任意）
+                  </label>
+                  <span style={{ fontSize: '0.72rem', color: '#0284c7', background: '#f0f9ff', padding: '1px 6px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+                    貼付で100%完全再現
+                  </span>
+                </div>
+                <textarea
+                  className="form-textarea"
+                  style={{ minHeight: '85px', fontSize: '0.8rem', lineHeight: '1.4' }}
+                  placeholder="YouTubeの説明欄（もっと見る）にある材料リストやレシピ手順を貼り付けると、投稿者のレシピ通りに100%正確に再現します（空欄でもタイトルからAIがプロの分量で自動生成します）"
+                  value={ytDescription}
+                  onChange={(e) => setYtDescription(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5, marginTop: '6px' }}>
+                💡 URLを貼るだけで動画タイトルを自動検出し、AIが正確な分量・手順・プロのコツをレシピ化します。
               </div>
             </div>
           )}

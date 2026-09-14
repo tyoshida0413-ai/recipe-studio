@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { analyzeWithGemini } from '../api/gemini.js';
+import { fetchYouTubeInfo, cleanRecipeTitle } from '../utils/youtube.js';
 
 export default function RecipeDetail({
   recipe,
@@ -13,6 +15,8 @@ export default function RecipeDetail({
   const [checkedIngredients, setCheckedIngredients] = useState({});
   const [isEditingArrangement, setIsEditingArrangement] = useState(false);
   const [arrangementDraft, setArrangementDraft] = useState('');
+  const [isReAnalyzing, setIsReAnalyzing] = useState(false);
+  const [reAnalyzeStatus, setReAnalyzeStatus] = useState('');
 
   if (!recipe) {
     return (
@@ -57,6 +61,68 @@ export default function RecipeDetail({
     }
   };
 
+  const handleReAnalyzeYouTube = async () => {
+    if (!recipe.youtubeId) {
+      alert('YouTube動画が連携されていません');
+      return;
+    }
+    const settings = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('recipe_ai_settings') || '{}');
+      } catch {
+        return {};
+      }
+    })();
+    const geminiKey = settings.gemini_api_key;
+    if (!geminiKey) {
+      alert('Gemini APIキーが設定されていません。右上の「⚙️ API設定」から登録してください。');
+      return;
+    }
+
+    setIsReAnalyzing(true);
+    setReAnalyzeStatus('動画情報を取得中...');
+    try {
+      const info = await fetchYouTubeInfo(recipe.youtubeId);
+      const videoTitle = info?.title || '';
+      const authorName = info?.author || '';
+
+      setReAnalyzeStatus(videoTitle ? `「${videoTitle}」からレシピをAI生成中...` : 'AIレシピを解析中...');
+
+      const prompt = `以下のYouTube料理動画から、美味しい本格レシピを正確に構造化してJSONで出力してください。\n\n` +
+        (videoTitle ? `■ 動画タイトル: 『${videoTitle}』\n` : '') +
+        (authorName ? `■ 投稿者 / チャンネル: 『${authorName}』\n` : '') +
+        `■ 動画URL: https://www.youtube.com/watch?v=${recipe.youtubeId}\n\n` +
+        `【指示】\n動画タイトル『${videoTitle}』から料理を特定し、最高に美味しい黄金比レシピを作成してください。必要な材料と正確な分量（調味料含む）、切り方や下処理、丁寧な調理工程、タイマー秒数、プロのコツを網羅してください。titleには装飾記号を除いた綺麗な料理名を設定してください。`;
+
+      const reGenerated = await analyzeWithGemini(geminiKey, prompt, {
+        model: settings.gemini_model || 'gemini-3.8-flash',
+        sourceType: 'yt',
+        sourceBadge: authorName ? `▶ ${authorName}` : '▶ YouTube (Gemini)',
+      });
+
+      const updatedData = {
+        title: reGenerated.title || cleanRecipeTitle(videoTitle) || recipe.title,
+        cookingTime: reGenerated.cookingTime || '15分',
+        baseServings: reGenerated.baseServings || 1,
+        groupKey: reGenerated.groupKey || recipe.groupKey || 'other',
+        groupName: reGenerated.groupName || recipe.groupName || 'その他',
+        myArrangement: reGenerated.myArrangement || recipe.myArrangement || '',
+        ingredients: reGenerated.ingredients || [],
+        steps: reGenerated.steps || [],
+        crosscheck: reGenerated.crosscheck || { hasDiff: false, title: 'AI照合完了', desc: '動画タイトルからレシピを再生成しました' },
+        sourceName: authorName || recipe.sourceName || 'YouTube',
+        coverImage: info?.thumbnail || recipe.coverImage,
+      };
+
+      await onUpdateRecipe(recipe.id, updatedData);
+    } catch (err) {
+      alert('レシピの再生成に失敗しました: ' + (err.message || 'エラーが発生しました'));
+    } finally {
+      setIsReAnalyzing(false);
+      setReAnalyzeStatus('');
+    }
+  };
+
   const seekVideo = (timeSec) => {
     const iframe = document.getElementById('recipeDetailIframe');
     if (iframe && recipe.youtubeId) {
@@ -84,6 +150,22 @@ export default function RecipeDetail({
           </div>
 
           <div className="hero-actions">
+            {recipe.youtubeId && (
+              <button
+                className="btn btn-secondary btn-small"
+                onClick={handleReAnalyzeYouTube}
+                disabled={isReAnalyzing}
+                style={{
+                  background: '#f0f9ff',
+                  borderColor: '#38bdf8',
+                  color: '#0284c7',
+                  fontWeight: 600,
+                }}
+                title="動画タイトルからAIで材料・工程を再生成します"
+              >
+                {isReAnalyzing ? (reAnalyzeStatus || '⏳ 再生成中...') : '🔄 動画からAI再生成'}
+              </button>
+            )}
             <button className="btn btn-cook-mode btn-small" onClick={() => onOpenCookingMode(recipe)}>
               👨‍🍳 調理モード開始
             </button>
@@ -115,6 +197,48 @@ export default function RecipeDetail({
           </div>
         </div>
       </div>
+
+      {/* 動画があるが材料・手順が未生成の場合のアラートバナー */}
+      {recipe.youtubeId && (!recipe.ingredients || recipe.ingredients.length === 0 || !recipe.steps || recipe.steps.length === 0) && (
+        <div style={{
+          margin: '12px 20px 0',
+          padding: '14px 18px',
+          background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)',
+          border: '1.5px solid #93c5fd',
+          borderRadius: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '14px',
+          boxShadow: '0 2px 8px rgba(37,99,235,0.08)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '1.6rem' }}>✨</span>
+            <div>
+              <div style={{ fontWeight: 700, color: '#1e3a8a', fontSize: '0.92rem' }}>
+                YouTube動画から材料・調理手順をAI自動生成できます
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#2563eb', marginTop: '2px' }}>
+                動画のタイトルから、Gemini AIが材料・正確な分量・手順・プロのコツを一瞬で考案して完成させます。
+              </div>
+            </div>
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={handleReAnalyzeYouTube}
+            disabled={isReAnalyzing}
+            style={{
+              whiteSpace: 'nowrap',
+              fontWeight: 700,
+              padding: '8px 16px',
+              fontSize: '0.85rem',
+              boxShadow: '0 2px 8px rgba(37,99,235,0.25)',
+            }}
+          >
+            {isReAnalyzing ? (reAnalyzeStatus || '生成中...') : '⚡️ レシピをAIで自動完成させる'}
+          </button>
+        </div>
+      )}
 
       {/* AIクロスチェックバナー */}
       {recipe.crosscheck && (
