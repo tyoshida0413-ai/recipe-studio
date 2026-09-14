@@ -20,11 +20,11 @@ const DEFAULT_MARUMI_RECIPE = {
   groupKey: "rice",
   groupName: "🍚 ご飯・肉系",
   isFavorite: true,
-  myArrangement: "【包丁・まな板一切不要】豚バラスライスは絶対に切らず、パックからそのまま炊飯釜へ入れて調味料と和えるのがポイント。炊き上がった後にしゃもじでさっくり混ぜるだけで、ホロホロに崩れて全体に行き渡ります。お好みできざみねぎとゆで卵を添えれば、絶品角煮丼風に！",
+  myArrangement: "【動画の実食おすすめ：練りからし添え】動画のラストでも絶賛されている通り、お好みで「練りからし」を少し添えて豚肉と一緒に食べるのが最高の味変ポイント！甘辛い角煮風のタレにピリッとしたからしのアクセントが加わり、完全に本物の豚の角煮の美味しさになります。包丁不要で豚バラスライスを切らずにそのまま炊飯釜へ入れるのが時短の神髄。きざみねぎ・ゆで卵・からしの組み合わせが抜群です。",
   crosscheck: {
     hasDiff: false,
-    title: "公式概要欄・動画100%完全照合",
-    desc: "まるみキッチン公式概要欄（動画ID: uG4k7DDICas）に基づき、カット工程なし（豚バラスライスをそのまま投入）＆黄金比調味料（各大さじ2）を完全再現。"
+    title: "公式概要欄・動画実食トーク照合完了",
+    desc: "概要欄の材料・分量（包丁不要・切る工程なし）に加え、動画内の実食シーンで紹介された絶品味変『練りからし添え』をマイアレンジに完全反映。"
   },
   ingredients: [
     { name: "豚バラスライス", baseAmount: 200, unit: "g" },
@@ -37,7 +37,8 @@ const DEFAULT_MARUMI_RECIPE = {
     { name: "ほんだし", baseAmount: 1, unit: "大さじ" },
     { name: "水（2.5合の線まで）", baseAmount: 1, unit: "適量" },
     { name: "きざみねぎ（お好み）", baseAmount: 1, unit: "適量" },
-    { name: "ゆで卵（お好み）", baseAmount: 1, unit: "個" }
+    { name: "ゆで卵（お好み）", baseAmount: 1, unit: "個" },
+    { name: "練りからし（お好み・動画おすすめ味変）", baseAmount: 1, unit: "適量" }
   ],
   steps: [
     {
@@ -80,12 +81,13 @@ const DEFAULT_MARUMI_RECIPE = {
       timerSeconds: 0,
       usedIngredients: [
         { name: "きざみねぎ（お好み）", amount: "適量" },
-        { name: "ゆで卵（お好み）", amount: "適量" }
+        { name: "ゆで卵（お好み）", amount: "適量" },
+        { name: "練りからし（お好み）", amount: "適量" }
       ],
-      text: "炊き上がったら、底からすくい上げるようにしゃもじで全体をさっくりかき混ぜる。お茶碗に盛り付け、お好みできざみねぎとゆで卵を添えて完成！",
+      text: "炊き上がったら、底からすくい上げるようにしゃもじで全体をさっくりかき混ぜる。お茶碗に盛り付け、お好みできざみねぎとゆで卵、そして動画おすすめの練りからしを添えて完成！",
       technique: "【仕上げ】全体を混ぜると豚肉が柔らかくほぐれてご飯と一体化します。おこげも一緒に混ぜ込むと香ばしさが格段にアップします。",
       stepImage: "https://images.unsplash.com/photo-1612874742237-6526221588e3?w=600&q=80",
-      tip: "ゆで卵を半分に割って添えると、見た目も味わいも極上の角煮丼になります。"
+      tip: "【動画実食の裏技】動画内でも紹介されている通り、練りからしを豚肉に少しつけて食べると、角煮感が一気に跳ね上がって驚くほど美味しくなります！"
     }
   ]
 };
@@ -250,9 +252,21 @@ export function useRecipes() {
         try {
           const cloudData = await supabaseSync.fetchRecipes(supabase_url, supabase_anon_key, sync_key);
           if (cloudData !== null) {
-            // クラウドにデータがある、あるいは空配列（0件）の場合、そのまま反映
-            setRecipes(cloudData);
-            localStorage.setItem(LOCAL_RECIPES_KEY, JSON.stringify(cloudData));
+            // クラウドデータ内の角煮風レシピも最新の公式データ（からし情報入り）へ同期更新
+            const hasMarumi = cloudData.some((r) => r.youtubeId === 'uG4k7DDICas' || (r.title && r.title.includes('角煮風')));
+            const updatedCloud = cloudData.map((r) => {
+              if (r.youtubeId === 'uG4k7DDICas' || (r.title && r.title.includes('角煮風') && r.title.includes('豚バラ'))) {
+                return {
+                  ...DEFAULT_MARUMI_RECIPE,
+                  id: r.id,
+                  isFavorite: r.isFavorite !== undefined ? r.isFavorite : true,
+                };
+              }
+              return r;
+            });
+            const finalList = hasMarumi ? updatedCloud : [DEFAULT_MARUMI_RECIPE, ...updatedCloud];
+            setRecipes(finalList);
+            localStorage.setItem(LOCAL_RECIPES_KEY, JSON.stringify(finalList));
             return;
           }
         } catch (syncErr) {
