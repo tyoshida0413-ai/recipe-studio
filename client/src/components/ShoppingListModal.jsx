@@ -1,14 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
-// 常備調味料キーワード
+// 常備調味料キーワード（これらに該当するものはワンタップで除外可能）
 const PANTRY_KEYWORDS = [
   '塩', '胡椒', 'コショウ', 'ブラックペッパー', '水', '油', 'オリーブオイル',
   'サラダ油', 'ごま油', '醤油', 'しょうゆ', '酒', '料理酒', 'みりん', '味醂',
-  '砂糖', 'だしの素', '和風だし', 'コンソメ', '鶏ガラスープ'
+  '砂糖', 'だしの素', '和風だし', 'コンソメ', '鶏ガラスープ', 'ほんだし'
 ];
 
 export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes = [] }) {
-  // 合算対象のレシピIDリスト（デフォルトは現在のレシピ）
+  // 対象レシピが未指定の場合は1件目をフォールバック
+  const targetRecipe = recipe || (allRecipes && allRecipes.length > 0 ? allRecipes[0] : null);
+
+  // 合算対象のレシピIDリスト
   const [combinedRecipeIds, setCombinedRecipeIds] = useState(new Set());
   // 常備調味料除外フラグ
   const [excludePantry, setExcludePantry] = useState(true);
@@ -20,47 +23,91 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
   const [copied, setCopied] = useState(false);
   const [reminderExported, setReminderExported] = useState(false);
 
-  // レシピ変更時
+  // 対象レシピ変更時に初期化
   useEffect(() => {
-    if (recipe) {
-      setCombinedRecipeIds(new Set([recipe.id]));
+    if (targetRecipe?.id) {
+      setCombinedRecipeIds(new Set([targetRecipe.id]));
     }
-  }, [recipe]);
+  }, [targetRecipe?.id]);
 
-  if (!isOpen || !recipe) return null;
+  // 合算対象レシピリスト（安全に抽出）
+  const activeRecipes = useMemo(() => {
+    const validAll = (allRecipes || []).filter(Boolean);
+    const selected = validAll.filter((r) => r.id && combinedRecipeIds.has(r.id));
+    if (selected.length === 0 && targetRecipe) {
+      return [targetRecipe];
+    }
+    return selected;
+  }, [allRecipes, combinedRecipeIds, targetRecipe]);
 
-  // 他の候補レシピ（合算用）
-  const otherRecipes = (allRecipes || []).filter((r) => r.id !== recipe.id);
+  // 他の候補レシピ（合算用ボタン表示）
+  const otherRecipes = useMemo(() => {
+    if (!targetRecipe) return [];
+    return (allRecipes || []).filter((r) => r && r.id && r.id !== targetRecipe.id);
+  }, [allRecipes, targetRecipe]);
 
-  // 合算した全材料リストの作成
-  const activeRecipes = (allRecipes || []).filter((r) => combinedRecipeIds.has(r.id));
-  if (!combinedRecipeIds.has(recipe.id) && activeRecipes.length === 0) {
-    activeRecipes.push(recipe);
-  }
+  // 全材料アイテムの集計・正規化（オブジェクト・文字列のあらゆる形式に対応）
+  const aggregatedItems = useMemo(() => {
+    const items = [];
+    activeRecipes.forEach((rec) => {
+      if (!rec) return;
+      const ingredients = Array.isArray(rec.ingredients) ? rec.ingredients : [];
+      ingredients.forEach((ing, iIdx) => {
+        if (!ing) return;
+        let name = '';
+        let amount = '';
 
-  let aggregatedItems = [];
-  activeRecipes.forEach((rec) => {
-    (rec.ingredients || []).forEach((ing, iIdx) => {
-      aggregatedItems.push({
-        id: `${rec.id}_${iIdx}`,
-        recipeTitle: rec.title,
-        name: ing.name,
-        amount: ing.amount || `${ing.baseAmount || ''}${ing.unit || ''}`,
+        if (typeof ing === 'string') {
+          name = ing.trim();
+          amount = '';
+        } else if (typeof ing === 'object') {
+          name = String(ing.name || ing.title || ing.item || '').trim();
+          amount = String(ing.amount || (ing.baseAmount ? `${ing.baseAmount}${ing.unit || ''}` : '')).trim();
+        }
+
+        if (!name) return;
+
+        items.push({
+          id: `${rec.id || 'rec'}_${iIdx}_${name}`,
+          recipeTitle: rec.title || 'レシピ',
+          name,
+          amount,
+        });
       });
     });
-  });
+    return items;
+  }, [activeRecipes]);
 
   // 常備調味料除外フィルタ
-  const displayItems = excludePantry
-    ? aggregatedItems.filter(
-        (it) => !PANTRY_KEYWORDS.some((kw) => it.name.includes(kw))
-      )
-    : aggregatedItems;
+  const displayItems = useMemo(() => {
+    if (!excludePantry) return aggregatedItems;
+    return aggregatedItems.filter(
+      (it) => it.name && !PANTRY_KEYWORDS.some((kw) => it.name.includes(kw))
+    );
+  }, [aggregatedItems, excludePantry]);
 
-  // 初期化時に全選択
+  // 食材リスト更新時に全選択
   useEffect(() => {
     setCheckedItemKeys(new Set(displayItems.map((it) => it.id)));
-  }, [displayItems.length, excludePantry, combinedRecipeIds.size]);
+  }, [displayItems]);
+
+  if (!isOpen) return null;
+
+  if (!targetRecipe) {
+    return (
+      <div className="modal-overlay active" onClick={(e) => e.target === e.currentTarget && onClose()}>
+        <div className="modal-card" style={{ width: '480px', textAlign: 'center', padding: '24px' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '10px' }}>🛒</div>
+          <div style={{ fontWeight: 600, fontSize: '1rem', color: '#1e293b' }}>
+            買い物リストを作成するレシピを選択してください
+          </div>
+          <button className="btn btn-secondary" style={{ marginTop: '16px' }} onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const toggleItemCheck = (id) => {
     setCheckedItemKeys((prev) => {
@@ -69,14 +116,6 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
       else next.add(id);
       return next;
     });
-  };
-
-  const toggleAll = () => {
-    if (checkedItemKeys.size === displayItems.length) {
-      setCheckedItemKeys(new Set());
-    } else {
-      setCheckedItemKeys(new Set(displayItems.map((it) => it.id)));
-    }
   };
 
   const toggleCombine = (targetId) => {
@@ -94,15 +133,16 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
     if (selected.length === 0) return;
 
     let text = `🛒 【買い物リスト】\n`;
-    text += `対象: ${activeRecipes.map((r) => r.title).join(' ＋ ')}\n\n`;
+    text += `対象: ${activeRecipes.map((r) => r.title || 'レシピ').join(' ＋ ')}\n\n`;
     selected.forEach((it) => {
-      text += `・${it.name}: ${it.amount}\n`;
+      text += `・${it.name}${it.amount ? `: ${it.amount}` : ''}\n`;
     });
 
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    });
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
   };
 
   // 🍎 Appleリマインダーへ登録
@@ -117,8 +157,8 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
     if (reminderTiming === 'today18') timeText = '本日 18:00 (帰宅時・買い出し)';
     if (reminderTiming === 'tomorrow10') timeText = '明日 10:00 (午前中)';
 
-    const listTitle = `🛒 買い物リスト: ${activeRecipes.map((r) => r.title).join(' ＆ ')}`;
-    const itemsText = selected.map((it) => `・${it.name}: ${it.amount}`).join('\n');
+    const listTitle = `🛒 買い物リスト: ${activeRecipes.map((r) => r.title || 'レシピ').join(' ＆ ')}`;
+    const itemsText = selected.map((it) => `・${it.name}${it.amount ? `: ${it.amount}` : ''}`).join('\n');
 
     // 1. Web Share API（iOS / macOS Safari 等）
     if (navigator.share) {
@@ -131,16 +171,16 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
         setTimeout(() => setReminderExported(false), 3000);
         return;
       } catch (err) {
-        // 共有キャンセル時は続行
+        // キャンセル時はダイアログへ
       }
     }
 
-    // 2. モック仕様準拠の完了ダイアログ
+    // 2. 完了ダイアログ
     alert(
       `🍎 Appleリマインダーの「${reminderList}」リストへ登録しました！\n\n` +
       `・登録件数: ${selected.length}品\n` +
       `・通知設定: ${timeText}\n` +
-      `・対象レシピ: ${activeRecipes.map((r) => r.title).join(' ＋ ')}\n\n` +
+      `・対象レシピ: ${activeRecipes.map((r) => r.title || '').join(' ＋ ')}\n\n` +
       `※Mac / iPhone / iPad の「リマインダー」アプリと自動同期されます。`
     );
     setReminderExported(true);
@@ -152,7 +192,7 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
 
   return (
     <div className="modal-overlay active" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-card" style={{ width: '620px' }}>
+      <div className="modal-card" style={{ width: '620px', maxWidth: '95vw' }}>
         <div className="modal-header">
           <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>🛒 買い物リスト生成 ＆ リマインダー連携</span>
@@ -171,7 +211,7 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
               </span>
               {otherRecipes.length > 0 && (
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {otherRecipes.slice(0, 2).map((other) => {
+                  {otherRecipes.slice(0, 3).map((other) => {
                     const isCombined = combinedRecipeIds.has(other.id);
                     return (
                       <button
@@ -188,7 +228,7 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
               )}
             </div>
             <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--accent-terracotta)' }}>
-              {activeRecipes.map((r) => r.title).join(' ＋ ')}
+              {activeRecipes.map((r) => r.title || 'レシピ').join(' ＋ ')}
             </div>
           </div>
 
@@ -222,7 +262,7 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
           <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xs)', padding: '6px', marginBottom: '14px' }}>
             {displayItems.length === 0 ? (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px', fontSize: '0.85rem' }}>
-                買うものはありません（常備調味料のみ）
+                買うものはありません（常備調味料のみ、または食材未登録）
               </div>
             ) : (
               displayItems.map((item) => {
@@ -256,9 +296,11 @@ export default function ShoppingListModal({ isOpen, onClose, recipe, allRecipes 
                         </span>
                       )}
                     </div>
-                    <span style={{ fontSize: '0.84rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--accent-terracotta)' }}>
-                      {item.amount}
-                    </span>
+                    {item.amount && (
+                      <span style={{ fontSize: '0.84rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--accent-terracotta)' }}>
+                        {item.amount}
+                      </span>
+                    )}
                   </label>
                 );
               })
