@@ -94,12 +94,26 @@ export default function CookingMode({ recipe, onClose }) {
   };
 
   const jumpToVideoTime = (timeSec) => {
-    if (recipe?.youtubeId && timeSec !== undefined) {
-      window.open(
-        `https://www.youtube.com/watch?v=${recipe.youtubeId}&t=${timeSec}s`,
-        '_blank'
-      );
-    }
+    const sec = (timeSec !== undefined && timeSec !== null) ? timeSec : currentStepIndex * 35;
+    onClose();
+    setTimeout(() => {
+      const iframe = document.getElementById('recipeDetailIframe');
+      if (iframe) {
+        if (iframe.contentWindow) {
+          try {
+            iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [sec, true] }), '*');
+            iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+          } catch (e) {}
+        }
+        if (!iframe.src || !iframe.src.includes(`start=${sec}`)) {
+          iframe.src = `https://www.youtube-nocookie.com/embed/${recipe.youtubeId}?start=${sec}&autoplay=1&enablejsapi=1`;
+        }
+        const mediaCard = document.querySelector('.media-card');
+        if (mediaCard) {
+          mediaCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    }, 120);
   };
 
   return (
@@ -178,14 +192,21 @@ export default function CookingMode({ recipe, onClose }) {
             />
             <div className="cooking-media-badge">工程 {currentStep.num || currentStepIndex + 1}</div>
 
-            {recipe?.youtubeId && currentStep.timeSec !== undefined && (
-              <button
-                className="cooking-video-jump-btn"
-                onClick={() => jumpToVideoTime(currentStep.timeSec)}
-              >
-                ▶ 動画 {currentStep.timeDisplay || '再生'}
-              </button>
-            )}
+            {recipe?.youtubeId && (() => {
+              const sec = (currentStep.timeSec !== undefined && currentStep.timeSec !== null) ? currentStep.timeSec : currentStepIndex * 35;
+              const m = Math.floor(sec / 60);
+              const s = sec % 60;
+              const timeDisplay = currentStep.timeDisplay || `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+              return (
+                <button
+                  className="cooking-video-jump-btn"
+                  onClick={() => jumpToVideoTime(sec)}
+                  title="調理モードを閉じて動画のこの秒数へジャンプ"
+                >
+                  ▶ {timeDisplay} から動画で確認
+                </button>
+              );
+            })()}
           </div>
 
           {/* この工程で使う材料ボックス */}

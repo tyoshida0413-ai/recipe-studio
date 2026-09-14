@@ -66,53 +66,86 @@ export async function fetchYouTubeInfo(urlOrId) {
     }
   }
 
-  // 3. 動画概要欄（材料・分量テキスト）の取得（Invidious API & プロキシ）
-  const descPromises = [
-    // Lemnoslife noKey API
-    (async () => {
-      try {
-        const c = new AbortController();
-        const t = setTimeout(() => c.abort(), 3500);
-        const r = await fetch(`https://yt.lemnoslife.com/noKey/videos?id=${youtubeId}&part=snippet`, { signal: c.signal });
-        clearTimeout(t);
-        if (r.ok) {
-          const d = await r.json();
-          const desc = d.items?.[0]?.snippet?.description;
-          if (desc && desc.length > 10) return desc;
-        }
-      } catch (e) {}
-      return null;
-    })(),
-    // Invidious 各インスタンス
-    ...INVIDIOUS_ENDPOINTS.map(async (endpoint) => {
-      try {
-        const c = new AbortController();
-        const t = setTimeout(() => c.abort(), 3500);
-        const r = await fetch(`${endpoint}/api/v1/videos/${youtubeId}`, { signal: c.signal });
-        clearTimeout(t);
-        if (r.ok) {
-          const d = await r.json();
-          if (d.description && d.description.length > 10) return d.description;
-        }
-      } catch (e) {}
-      return null;
-    }),
-  ];
+  // 3. 動画概要欄（材料・分量テキスト）の取得（AllOriginsプロキシ & Invidious多重フォールバック）
+  let descriptionFetched = false;
 
+  // A. AllOriginsプロキシ経由でYouTube公式ページのshortDescriptionを抽出
   try {
-    // 最初に応答のあった有効な概要欄を採用
-    const firstValidDesc = await Promise.any(
-      descPromises.map(p => p.then(v => v ? v : Promise.reject()))
-    );
-    if (firstValidDesc) {
-      description = firstValidDesc;
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), 4000);
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(watchUrl)}`;
+    const r = await fetch(proxyUrl, { signal: c.signal });
+    clearTimeout(t);
+    if (r.ok) {
+      const html = await r.text();
+      // shortDescriptionの抽出
+      const descMatch = html.match(/"shortDescription":"((?:\\.|[^"\\])*)"/);
+      if (descMatch && descMatch[1]) {
+        // Unicodeエスケープと改行のデコード
+        const decoded = JSON.parse(`"${descMatch[1]}"`);
+        if (decoded && decoded.trim().length > 10) {
+          description = decoded.trim();
+          descriptionFetched = true;
+        }
+      }
+      // タイトルが未取得だった場合のHTMLフォールバック
+      if (!title) {
+        const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+        if (titleMatch && titleMatch[1]) {
+          title = titleMatch[1].replace(' - YouTube', '').trim();
+        }
+      }
     }
   } catch (err) {
-    // 概要欄の自動取得が失敗した場合は空文字（手動貼付またはタイトルのみでフォールバック）
-    console.warn('Could not auto-fetch video description from APIs:', err);
+    console.warn('AllOrigins YouTube proxy fetch failed:', err);
   }
 
-  return { youtubeId, title, author, thumbnail, description };
+  // B. Invidious API フォールバック
+  if (!description) {
+    const descPromises = [
+      (async () => {
+        try {
+          const c = new AbortController();
+          const t = setTimeout(() => c.abort(), 3000);
+          const r = await fetch(`https://yt.lemnoslife.com/noKey/videos?id=${youtubeId}&part=snippet`, { signal: c.signal });
+          clearTimeout(t);
+          if (r.ok) {
+            const d = await r.json();
+            const desc = d.items?.[0]?.snippet?.description;
+            if (desc && desc.length > 10) return desc;
+          }
+        } catch (e) {}
+        return null;
+      })(),
+      ...INVIDIOUS_ENDPOINTS.map(async (endpoint) => {
+        try {
+          const c = new AbortController();
+          const t = setTimeout(() => c.abort(), 3000);
+          const r = await fetch(`${endpoint}/api/v1/videos/${youtubeId}`, { signal: c.signal });
+          clearTimeout(t);
+          if (r.ok) {
+            const d = await r.json();
+            if (d.description && d.description.length > 10) return d.description;
+          }
+        } catch (e) {}
+        return null;
+      }),
+    ];
+
+    try {
+      const firstValidDesc = await Promise.any(
+        descPromises.map(p => p.then(v => v ? v : Promise.reject()))
+      );
+      if (firstValidDesc) {
+        description = firstValidDesc;
+        descriptionFetched = true;
+      }
+    } catch (err) {
+      console.warn('Invidious fallback also failed:', err);
+    }
+  }
+
+  return { youtubeId, title, author, thumbnail, description, descriptionFetched };
 }
 
 /**

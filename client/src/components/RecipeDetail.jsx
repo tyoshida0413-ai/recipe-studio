@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { analyzeWithGemini } from '../api/gemini.js';
 import { fetchYouTubeInfo, cleanRecipeTitle } from '../utils/youtube.js';
+import EditModal from './EditModal.jsx';
 
 export default function RecipeDetail({
   recipe,
@@ -17,6 +18,7 @@ export default function RecipeDetail({
   const [arrangementDraft, setArrangementDraft] = useState('');
   const [isReAnalyzing, setIsReAnalyzing] = useState(false);
   const [reAnalyzeStatus, setReAnalyzeStatus] = useState('');
+  const [isEditOpen, setIsEditOpen] = useState(false);
 
   if (!recipe) {
     return (
@@ -96,18 +98,19 @@ export default function RecipeDetail({
 
       if (videoDesc) {
         prompt += `■ 動画の概要欄テキスト（投稿者が公式に記載したレシピ・材料情報）:\n${videoDesc}\n\n` +
-          `【最重要：厳格遵守ルール（捏造・勝手な改変の完全禁止）】\n` +
-          `1. 概要欄に記載された食材・部位・調味料と正確な分量を【100%忠実】に出力してください。\n` +
-          `2. 【肉の部位の勝手な変更は厳禁】: 「角煮風」という言葉に惑わされて勝手に「豚バラブロック肉」にしてはいけません！概要欄や動画で「豚バラスライス」「豚バラ薄切り肉」と記載されている場合は必ず薄切り・スライス肉として出力してください。\n` +
-          `3. 概要欄に記載されていない余計な食材（長ネギの青い部分、生姜の薄切り、八角、ゆで卵など）を勝手に追加・捏造してはいけません。\n` +
-          `4. 調味料の分量（大さじ、小さじ、グラム等）も概要欄記載の数値をそのまま正確に守り、勝手に比率を変えないでください。\n` +
-          `5. 調理工程は概要欄や動画の流れに沿って、初心者にも分かりやすい丁寧なステップに整理してください。\n`;
+          `【最重要：厳格遵守ルール（捏造・勝手な具材追加・工程捏造の完全禁止）】\n` +
+          `1. 概要欄に記載された食材・部位・調味料と分量を【100%忠実】に出力してください。\n` +
+          `2. 【切る工程・下処理の捏造厳禁】: 概要欄やテキストで明示的に切る・刻むと指示されていない食材を勝手に「一口大に切る」等のカット工程として手順に追加しないでください。\n` +
+          `3. 【具材・調味料の追加厳禁】: 概要欄に書かれていない食材（香味野菜、水、油、調味料、薬味など）は、どんなに一般的・常識的であっても絶対に1つも追加しないでください。\n` +
+          `4. 【分量の捏造厳禁】: 概要欄記載の数値をそのまま正確に出力し、記載のないものは勝手に数値を捏造せず「適量」としてください。\n` +
+          `5. 【部位・種類の改変厳禁】: スライス肉をブロック肉に変えるなど、勝手な変更は一切禁止です。\n` +
+          `6. 調理工程は概要欄や動画の流れに沿って整理し、各工程の開始秒数（timeSec: 数値, timeDisplay: "01:25"形式）を付与してください。\n`;
       } else {
         prompt += `【最重要：厳格遵守ルール（ハルシネーションの完全禁止）】\n` +
-          `1. 動画タイトル『${videoTitle}』から料理を特定してください。\n` +
-          `2. 【肉の部位に関する厳重注意】: 本レシピは手軽に作れる炊き込みご飯レシピです。「角煮風」とあってもブロック肉ではなく【豚バラスライス（薄切り肉）】を使用したレシピとして作成してください。ブロック肉への変更は固く禁じます。\n` +
-          `3. 具材の捏造禁止: 余計な香味野菜やブロック肉用の下茹で具材（ネギの青い部分など）は一切入れず、豚バラスライスとお米、基本の調味料（醤油、みりん、酒、砂糖など）のみでシンプルかつ黄金比の分量にしてください。\n` +
-          `4. 調理工程も炊飯器で炊くだけのシンプルで忠実な工程にしてください。\n`;
+          `1. 動画タイトル『${videoTitle}』の趣旨に忠実なレシピを作成してください。\n` +
+          `2. 【切る工程・不要な下処理の捏造禁止】: 必要最小限の自然な手順のみで構成し、切る必要のない食材のカット工程など無駄な工程を挟まないでください。\n` +
+          `3. 余計な香味野菜や装飾的具材を勝手に捏造・追加せず、メイン食材と基本調味料のみでシンプルに構成してください。\n` +
+          `4. 各調理工程には、動画内の該当シーンの開始秒数（timeSec: 数値, timeDisplay: "01:25"形式）を必ず推定・付与してください。\n`;
       }
       prompt += `・titleには動画タイトルの装飾記号を除いた綺麗な料理名を設定してください。\n`;
 
@@ -142,8 +145,37 @@ export default function RecipeDetail({
 
   const seekVideo = (timeSec) => {
     const iframe = document.getElementById('recipeDetailIframe');
-    if (iframe && recipe.youtubeId) {
-      iframe.src = `https://www.youtube-nocookie.com/embed/${recipe.youtubeId}?start=${timeSec}&autoplay=1&enablejsapi=1`;
+    if (!iframe || !recipe.youtubeId) return;
+
+    const seconds = typeof timeSec === 'number' ? timeSec : parseInt(timeSec, 10) || 0;
+
+    // 1. postMessage で seekTo & playVideo
+    try {
+      if (iframe.contentWindow) {
+        iframe.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'seekTo',
+          args: [seconds, true],
+        }), '*');
+        iframe.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'playVideo',
+          args: [],
+        }), '*');
+      }
+    } catch (e) {
+      console.warn('postMessage seek failed:', e);
+    }
+
+    // 2. フォールバック (src更新)
+    if (!iframe.src || !iframe.src.includes(`start=${seconds}`)) {
+      iframe.src = `https://www.youtube-nocookie.com/embed/${recipe.youtubeId}?start=${seconds}&autoplay=1&enablejsapi=1`;
+    }
+
+    // 3. 動画位置へスムーズスクロール
+    const mediaCard = document.querySelector('.media-card');
+    if (mediaCard) {
+      mediaCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   };
 
@@ -183,6 +215,13 @@ export default function RecipeDetail({
                 {isReAnalyzing ? (reAnalyzeStatus || '⏳ 再生成中...') : '🔄 動画からAI再生成'}
               </button>
             )}
+            <button
+              className="btn btn-secondary btn-small"
+              onClick={() => setIsEditOpen(true)}
+              title="料理名、調理時間、人数、グループ、写真、メモを編集"
+            >
+              ✏️ レシピ編集
+            </button>
             <button className="btn btn-cook-mode btn-small" onClick={() => onOpenCookingMode(recipe)}>
               👨‍🍳 調理モード開始
             </button>
@@ -441,14 +480,44 @@ export default function RecipeDetail({
                     ) : null}
                   </div>
 
-                  {recipe.youtubeId && step.timeSec !== undefined && step.timeSec !== null && (
-                    <button className="seek-btn" onClick={() => seekVideo(step.timeSec)}>
-                      ▶ {step.timeDisplay || '00:00'}
-                    </button>
-                  )}
+                  {recipe.youtubeId && (() => {
+                    const timeSec = (step.timeSec !== undefined && step.timeSec !== null) ? step.timeSec : idx * 35;
+                    const m = Math.floor(timeSec / 60);
+                    const s = timeSec % 60;
+                    const timeDisplay = step.timeDisplay || `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                    return (
+                      <button
+                        className="seek-btn"
+                        onClick={() => seekVideo(timeSec)}
+                        title="動画の該当箇所から再生"
+                      >
+                        ▶ {timeDisplay} から頭出し
+                      </button>
+                    );
+                  })()}
                 </div>
 
                 <div className="step-instruction">{step.text}</div>
+
+                {step.usedIngredients && step.usedIngredients.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '8px 0' }}>
+                    {step.usedIngredients.map((ing, iIdx) => (
+                      <span
+                        key={iIdx}
+                        style={{
+                          fontSize: '0.75rem',
+                          background: 'var(--bg-subtle)',
+                          border: '1px solid var(--border-subtle)',
+                          padding: '2px 7px',
+                          borderRadius: '4px',
+                          color: 'var(--text-body)',
+                        }}
+                      >
+                        🧺 {ing.name} <strong style={{ color: 'var(--accent-terracotta)', fontFamily: "'JetBrains Mono', monospace" }}>{ing.amount}</strong>
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {step.technique && (
                   <div className="technique-box">
@@ -473,6 +542,14 @@ export default function RecipeDetail({
           ))}
         </div>
       </section>
+
+      {/* レシピ基本情報 編集モーダル */}
+      <EditModal
+        isOpen={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        recipe={recipe}
+        onSave={onUpdateRecipe}
+      />
     </main>
   );
 }

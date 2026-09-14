@@ -155,6 +155,7 @@ export default function App() {
         isOpen={isShoppingListOpen}
         onClose={() => setIsShoppingListOpen(false)}
         recipe={currentRecipe}
+        allRecipes={recipes}
       />
 
       {/* 材料編集モーダル */}

@@ -101,8 +101,8 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
 
           setCurrentStepText(videoTitle ? `「${videoTitle}」からレシピをAI構造化中...` : 'Gemini AIが動画情報からレシピを構造化中...');
 
-          // 厳格なプロンプトを作成（ハルシネーション・勝手な具材変更の完全禁止）
-          let prompt = `以下のYouTube料理動画から、美味しい本格レシピを正確に構造化してJSONで出力してください。\n\n`;
+          // 厳格なプロンプトを作成（ハルシネーション・勝手な具材変更・切る工程捏造の完全禁止）
+          let prompt = `以下のYouTube料理動画から、レシピを正確に構造化してJSONで出力してください。\n\n`;
           if (videoTitle) {
             prompt += `■ 動画タイトル: 『${videoTitle}』\n`;
           }
@@ -113,18 +113,19 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
 
           if (effectiveDesc) {
             prompt += `■ 動画の概要欄テキスト（投稿者が公式に記載したレシピ・材料情報）:\n${effectiveDesc}\n\n`;
-            prompt += `【最重要：厳格遵守ルール（捏造・勝手な改変の完全禁止）】\n` +
-              `1. 概要欄に記載された食材・部位・調味料と正確な分量を【100%忠実】に出力してください。\n` +
-              `2. 【肉の部位の勝手な変更は厳禁】: 「角煮風」という言葉に惑わされて勝手に「豚バラブロック肉」にしてはいけません！概要欄や動画で「豚バラスライス」「豚バラ薄切り肉」と記載されている場合は必ず薄切り・スライス肉として出力してください。\n` +
-              `3. 概要欄に記載されていない余計な食材（長ネギの青い部分、生姜の薄切り、八角、ゆで卵など）を勝手に追加・捏造してはいけません。\n` +
-              `4. 調味料の分量（大さじ、小さじ、グラム等）も概要欄記載の数値をそのまま正確に守り、勝手に比率を変えないでください。\n` +
-              `5. 調理工程は概要欄や動画の流れに沿って、初心者にも分かりやすい丁寧なステップに整理してください。\n`;
+            prompt += `【最重要：厳格遵守ルール（捏造・勝手な具材追加・工程捏造の完全禁止）】\n` +
+              `1. 概要欄に記載された食材・部位・調味料と分量を【100%忠実】に出力してください。\n` +
+              `2. 【切る工程・下処理の捏造厳禁】: 概要欄やテキストで明示的に「切る」「カットする」「刻む」と指示されていない食材を、勝手に「一口大に切る」等のカット工程として手順に追加しないでください。パックからそのまま加熱する料理も多数あります。\n` +
+              `3. 【具材・調味料の追加厳禁】: 概要欄に書かれていない食材（香味野菜、水、油、調味料、薬味など）は、どんなに一般的・常識的であっても絶対に1つも追加しないでください。\n` +
+              `4. 【分量の捏造厳禁】: 概要欄記載の数値をそのまま正確に出力し、記載のないものは勝手に数値を捏造せず「適量」としてください。\n` +
+              `5. 【部位・種類の改変厳禁】: スライス肉をブロック肉に変えるなど、勝手な変更は一切禁止です。\n` +
+              `6. 調理工程は概要欄や動画の流れに沿って整理し、各工程の開始秒数（timeSec: 数値, timeDisplay: "01:25"形式）を付与してください。\n`;
           } else {
             prompt += `【最重要：厳格遵守ルール（ハルシネーションの完全禁止）】\n` +
-              `1. 動画タイトル『${videoTitle || youtubeUrl.trim()}』から料理を特定してください。\n` +
-              `2. 【肉の部位に関する厳重注意】: 本レシピは手軽に作れる炊き込みご飯レシピです。「角煮風」とあってもブロック肉ではなく【豚バラスライス（薄切り肉）】を使用したレシピとして作成してください。ブロック肉への変更は固く禁じます。\n` +
-              `3. 具材の捏造禁止: 余計な香味野菜やブロック肉用の下茹で具材（ネギの青い部分など）は一切入れず、豚バラスライスとお米、基本の調味料（醤油、みりん、酒、砂糖など）のみでシンプルかつ黄金比の分量にしてください。\n` +
-              `4. 調理工程も炊飯器で炊くだけのシンプルで忠実な工程にしてください。\n`;
+              `1. 動画タイトル『${videoTitle || youtubeUrl.trim()}』の趣旨に忠実なレシピを作成してください。\n` +
+              `2. 【切る工程・不要な下処理の捏造禁止】: 必要最小限の自然な手順のみで構成し、切る必要のない食材のカット工程など無駄な工程を挟まないでください。\n` +
+              `3. 余計な香味野菜や装飾的具材を勝手に捏造・追加せず、メイン食材と基本調味料のみでシンプルに構成してください。\n` +
+              `4. 各調理工程には、動画内の該当シーンの開始秒数（timeSec: 数値, timeDisplay: "01:25"形式）を必ず推定・付与してください。\n`;
           }
           prompt += `・titleには動画タイトルの装飾（【大人気】や【簡単】など）を整理した綺麗な料理名を設定してください。\n`;
 
@@ -313,42 +314,48 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
                         👤 {videoMeta.author}
                       </div>
                     )}
-                    <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span>✓</span> 動画タイトルから料理レシピを自動生成します
+                    <div style={{ fontSize: '0.72rem', color: videoMeta.descriptionFetched ? '#059669' : '#d97706', fontWeight: 600, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {videoMeta.descriptionFetched ? (
+                        <span>✓ 動画概要欄（材料・手順）を自動取得しました</span>
+                      ) : (
+                        <span>⚠️ 概要欄の自動取得制限中（下記に概要欄テキストを貼ると100%正確になります）</span>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* 概要欄テキスト入力（任意） */}
+              {/* 概要欄テキスト入力 */}
               <div className="form-group" style={{ marginTop: '14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                   <label className="form-label" style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
                     動画の概要欄テキスト（材料・分量）
                   </label>
                   {ytDescription.trim() ? (
-                    <span style={{ fontSize: '0.72rem', color: '#059669', background: '#ecfdf5', padding: '1px 6px', borderRadius: '4px', border: '1px solid #a7f3d0', fontWeight: 600 }}>
-                      ✓ 概要欄を反映中（忠実に再現）
+                    <span style={{ fontSize: '0.72rem', color: '#059669', background: '#ecfdf5', padding: '2px 8px', borderRadius: '4px', border: '1px solid #a7f3d0', fontWeight: 600 }}>
+                      ✓ 概要欄を反映中（材料・手順・分量を忠実に再現）
                     </span>
                   ) : (
-                    <span style={{ fontSize: '0.72rem', color: '#0284c7', background: '#f0f9ff', padding: '1px 6px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
-                      貼付で100%完全再現
+                    <span style={{ fontSize: '0.72rem', color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: 600 }}>
+                      ⚠️ 概要欄の貼り付けを推奨
                     </span>
                   )}
                 </div>
                 <textarea
                   className="form-textarea"
-                  style={{ minHeight: '85px', fontSize: '0.8rem', lineHeight: '1.4' }}
-                  placeholder="YouTubeの説明欄（もっと見る）にある材料リストやレシピ手順を貼り付けると、投稿者のレシピ通りに100%正確に再現します（空欄でもタイトルから豚バラスライスレシピをAIが自動生成します）"
+                  style={{ minHeight: '95px', fontSize: '0.8rem', lineHeight: '1.4' }}
+                  placeholder="YouTubeの説明欄（もっと見る）にある材料リストやレシピ手順を貼り付けると、投稿者のレシピ通りに100%正確（勝手な具材追加・工程捏造なし）に再現します。"
                   value={ytDescription}
                   onChange={(e) => setYtDescription(e.target.value)}
                   disabled={loading}
                 />
               </div>
 
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5, marginTop: '6px' }}>
-                💡 URLを貼るだけで動画タイトルを自動検出し、AIが正確な分量・手順・プロのコツをレシピ化します。
-              </div>
+              {!ytDescription.trim() && (
+                <div style={{ fontSize: '0.75rem', color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', padding: '8px 10px', borderRadius: '6px', marginTop: '6px', lineHeight: 1.45 }}>
+                  💡 <strong>おすすめ:</strong> YouTubeの概要欄（「もっと見る」）に記載されている材料・分量をここにコピー＆ペーストすると、不要な具材の捏造やカット工程の混入を防ぎ、動画通りの正確なレシピが作成されます。
+                </div>
+              )}
             </div>
           )}
 
