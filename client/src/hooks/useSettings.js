@@ -23,12 +23,12 @@ export function useSettings() {
         const status = await settingsApi.getStatus();
         const merged = { ...local, ...data };
         setSettings(merged);
-        setHasApiKey(status.hasOpenAiKey || !!merged.openai_api_key);
+        setHasApiKey(status.hasOpenAiKey || !!merged.gemini_api_key || !!merged.openai_api_key);
         return;
       } catch (serverErr) {
         // 静的ホスティング（GitHub Pages）時はLocalStorageを正とする
         setSettings(local);
-        setHasApiKey(!!local.openai_api_key);
+        setHasApiKey(!!local.gemini_api_key || !!local.openai_api_key);
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -50,7 +50,7 @@ export function useSettings() {
       const updated = { ...current, ...newSettings };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       setSettings(updated);
-      setHasApiKey(!!updated.openai_api_key);
+      setHasApiKey(!!updated.gemini_api_key || !!updated.openai_api_key);
 
       // サーバーAPIへも可能なら送信
       try {

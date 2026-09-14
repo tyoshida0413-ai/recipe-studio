@@ -2,8 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { supabaseSync } from '../api/supabaseSync.js';
 
 export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, onSaveSettings }) {
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gpt-4o');
+  // Gemini API Key
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
+
+  // OpenAI API Key
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
 
   // Supabase 同期設定
   const [supabaseUrl, setSupabaseUrl] = useState('');
@@ -16,7 +20,7 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
 
   useEffect(() => {
     if (settings) {
-      setModel(settings.openai_model || 'gpt-4o');
+      setGeminiModel(settings.gemini_model || 'gemini-2.0-flash');
       setSupabaseUrl(settings.supabase_url || '');
       setSupabaseAnonKey(settings.supabase_anon_key || '');
       setSyncKey(settings.sync_key || '');
@@ -24,6 +28,9 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
   }, [settings]);
 
   if (!isOpen) return null;
+
+  const hasGeminiKey = !!settings?.gemini_api_key;
+  const hasOpenaiKey = !!settings?.openai_api_key;
 
   const handleTestSupabase = async () => {
     setTestStatus('testing');
@@ -44,24 +51,28 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
     setMessage(null);
     try {
       const payload = {
-        openai_model: model,
+        gemini_model: geminiModel,
         supabase_url: supabaseUrl.trim(),
         supabase_anon_key: supabaseAnonKey.trim(),
         sync_key: syncKey.trim(),
       };
-      if (apiKey.trim()) {
-        payload.openai_api_key = apiKey.trim();
+      if (geminiApiKey.trim()) {
+        payload.gemini_api_key = geminiApiKey.trim();
       }
+      if (openaiApiKey.trim()) {
+        payload.openai_api_key = openaiApiKey.trim();
+      }
+
       await onSaveSettings(payload);
-      setMessage({ type: 'success', text: '設定を保存しました。データ同期が有効になりました。' });
-      setApiKey('');
+      setMessage({ type: 'success', text: '設定を保存しました。' });
+      setGeminiApiKey('');
+      setOpenaiApiKey('');
       setTimeout(() => {
         onClose();
         setMessage(null);
         setTestStatus(null);
-        // 設定反映のためにリロード
         window.location.reload();
-      }, 1200);
+      }, 1000);
     } catch (err) {
       setMessage({ type: 'error', text: err.message || '保存に失敗しました。' });
     } finally {
@@ -71,103 +82,137 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
 
   return (
     <div className="modal-overlay active" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-card" style={{ width: '580px' }}>
+      <div className="modal-card" style={{ width: '600px' }}>
         <div className="modal-header">
-          <div className="modal-title">⚙️ API設定 ＆ Mac・iPad同期</div>
+          <div className="modal-title">⚙️ AI設定 ＆ Mac・iPad同期</div>
           <button className="modal-close" onClick={onClose}>
             ✕
           </button>
         </div>
 
         <div className="modal-body">
-          {/* OpenAI API Key */}
-          <div className="form-group">
-            <label className="form-label">
-              OpenAI API キー
-              {hasApiKey && (
-                <span style={{ color: '#16a34a', fontSize: '0.78rem', marginLeft: '8px' }}>
+          {/* Google Gemini API Key */}
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <span style={{ fontSize: '1.1rem' }}>✨</span>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>Google Gemini API 設定（推奨）</span>
+              {hasGeminiKey && (
+                <span style={{ color: '#16a34a', fontSize: '0.78rem', fontWeight: 600, marginLeft: 'auto' }}>
                   ✓ 設定済み
                 </span>
               )}
-            </label>
-            <input
-              type="password"
-              className="form-input"
-              placeholder={hasApiKey ? '変更する場合のみ入力 (sk-...)' : 'sk-...'}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-              YouTubeやテキストのレシピAI自動解析に使用します。
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              Google AI Studio（aistudio.google.com）で取得した API キー（AIzaSy...）を登録します。
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '8px' }}>
+              <input
+                type="password"
+                className="form-input"
+                placeholder={hasGeminiKey ? '変更する場合のみ入力 (AIzaSy...)' : 'AIzaSy...'}
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '4px' }}>
+              <label className="form-label" style={{ fontSize: '0.8rem' }}>Gemini モデル選択</label>
+              <select
+                className="form-select"
+                style={{ padding: '6px 10px', fontSize: '0.85rem' }}
+                value={geminiModel}
+                onChange={(e) => setGeminiModel(e.target.value)}
+              >
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash（超高速・高精度・推奨）</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash（軽量高速）</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro（最高精度）</option>
+              </select>
             </div>
           </div>
 
           <hr style={{ border: 'none', borderTop: '1px solid var(--border-subtle)', margin: '16px 0' }} />
 
           {/* Supabase 同期キー設定 */}
-          <div style={{ marginBottom: '12px' }}>
+          <div style={{ marginBottom: '14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <span style={{ fontSize: '1rem' }}>☁️</span>
-              <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>Mac・iPad リアルタイム同期（Supabase）</span>
+              <span style={{ fontSize: '1.1rem' }}>☁️</span>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>Mac・iPad リアルタイム同期（Supabase）</span>
             </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.45, marginBottom: '8px' }}>
               MacとiPadに**同じ同期キー**を入力すると、登録・編集したレシピが自動的にクラウド同期されます。
             </div>
-          </div>
 
-          {/* 同期キー（合言葉） */}
-          <div className="form-group">
-            <label className="form-label">
-              🔑 同期キー（任意の合言葉 / パスコード）
-            </label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="例: my-family-kitchen-2026"
-              value={syncKey}
-              onChange={(e) => setSyncKey(e.target.value)}
-            />
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-              ※ MacとiPadの両方に同じ文字列を入力してください。
+            {/* 同期キー（合言葉） */}
+            <div className="form-group" style={{ marginBottom: '8px' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem' }}>
+                🔑 同期キー（任意の合言葉 / パスコード）
+              </label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="例: my-family-kitchen-2026"
+                value={syncKey}
+                onChange={(e) => setSyncKey(e.target.value)}
+              />
+            </div>
+
+            {/* Supabase Project URL */}
+            <div className="form-group" style={{ marginBottom: '8px' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem' }}>Supabase Project URL</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="https://xyzcompany.supabase.co"
+                value={supabaseUrl}
+                onChange={(e) => setSupabaseUrl(e.target.value)}
+              />
+            </div>
+
+            {/* Supabase Anon Key */}
+            <div className="form-group" style={{ marginBottom: '8px' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem' }}>Supabase Anon Key（公開キー）</label>
+              <input
+                type="password"
+                className="form-input"
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                value={supabaseAnonKey}
+                onChange={(e) => setSupabaseAnonKey(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-small"
+                onClick={handleTestSupabase}
+                disabled={!supabaseUrl || !supabaseAnonKey}
+              >
+                🔄 接続テスト
+              </button>
+              {testStatus === 'testing' && <span style={{ fontSize: '0.8rem' }}>接続確認中...</span>}
+              {testStatus === 'ok' && <span style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600 }}>✓ 接続成功！</span>}
             </div>
           </div>
 
-          {/* Supabase Project URL */}
-          <div className="form-group">
-            <label className="form-label">Supabase Project URL</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="https://xyzcompany.supabase.co"
-              value={supabaseUrl}
-              onChange={(e) => setSupabaseUrl(e.target.value)}
-            />
-          </div>
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border-subtle)', margin: '16px 0' }} />
 
-          {/* Supabase Anon Key */}
-          <div className="form-group">
-            <label className="form-label">Supabase Anon Key（公開キー）</label>
-            <input
-              type="password"
-              className="form-input"
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-              value={supabaseAnonKey}
-              onChange={(e) => setSupabaseAnonKey(e.target.value)}
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
-            <button
-              type="button"
-              className="btn btn-secondary btn-small"
-              onClick={handleTestSupabase}
-              disabled={!supabaseUrl || !supabaseAnonKey}
-            >
-              🔄 接続テスト
-            </button>
-            {testStatus === 'testing' && <span style={{ fontSize: '0.8rem' }}>接続確認中...</span>}
-            {testStatus === 'ok' && <span style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600 }}>✓ 接続成功！</span>}
-          </div>
+          {/* OpenAI API Key（任意・代替） */}
+          <details style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: '6px' }}>
+              OpenAI API を使用する場合（オプション）
+              {hasOpenaiKey && <span style={{ color: '#16a34a', marginLeft: '6px' }}>✓ 設定済み</span>}
+            </summary>
+            <div className="form-group" style={{ marginTop: '8px' }}>
+              <input
+                type="password"
+                className="form-input"
+                placeholder={hasOpenaiKey ? '変更する場合のみ入力 (sk-...)' : 'sk-...'}
+                value={openaiApiKey}
+                onChange={(e) => setOpenaiApiKey(e.target.value)}
+              />
+            </div>
+          </details>
 
           {message && (
             <div
@@ -191,7 +236,7 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
             閉じる
           </button>
           <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-            {saving ? '保存中...' : '設定を保存して同期開始'}
+            {saving ? '保存中...' : '設定を保存'}
           </button>
         </div>
       </div>

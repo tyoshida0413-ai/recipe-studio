@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { analyzeApi } from '../api/client.js';
+import { analyzeWithGemini } from '../api/gemini.js';
 
 export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
   const [activeTab, setActiveTab] = useState('yt'); // yt, x, memo, ai
@@ -14,39 +15,115 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
 
   if (!isOpen) return null;
 
+  const getSettings = () => {
+    try {
+      return JSON.parse(localStorage.getItem('recipe_ai_settings') || '{}');
+    } catch {
+      return {};
+    }
+  };
+
   const handleImport = async () => {
     setLoading(true);
     setError(null);
 
+    const settings = getSettings();
+    const geminiKey = settings.gemini_api_key;
+    const openaiKey = settings.openai_api_key;
+
+    if (!geminiKey && !openaiKey) {
+      setError('AIのAPIキーが設定されていません。右上の「⚙️ API設定」から Gemini または OpenAI のキーを登録してください。');
+      setLoading(false);
+      return;
+    }
+
     try {
       let created = null;
 
-      if (activeTab === 'yt') {
-        if (!youtubeUrl.trim()) throw new Error('YouTubeのURLを入力してください');
-        setCurrentStepText('YouTube動画の字幕・メタデータを取得中...');
-        const result = await analyzeApi.youtube(youtubeUrl.trim());
-        created = result.recipe;
-      } else if (activeTab === 'x') {
-        if (!xPostText.trim()) throw new Error('X（Twitter）のポスト内容を入力してください');
-        setCurrentStepText('Xポストからレシピ情報をAI抽出中...');
-        const result = await analyzeApi.text(xPostText.trim(), 'x');
-        created = result.recipe;
-      } else if (activeTab === 'memo') {
-        if (!memoText.trim()) throw new Error('メモのテキストを入力してください');
-        setCurrentStepText('テキスト・メモからレシピ構造をAI解析中...');
-        const result = await analyzeApi.text(memoText.trim(), 'memo');
-        created = result.recipe;
-      } else if (activeTab === 'ai') {
-        if (!aiPrompt.trim()) throw new Error('料理の要望を入力してください');
-        setCurrentStepText('AIシェフがオリジナルレシピを考案中...');
-        const result = await analyzeApi.generate(aiPrompt.trim());
-        created = result.recipe;
+      // === 1. Gemini 直接解析（推奨・GitHub Pagesでも100%動作） ===
+      if (geminiKey) {
+        if (activeTab === 'yt') {
+          if (!youtubeUrl.trim()) throw new Error('YouTubeのURLを入力してください');
+          setCurrentStepText('Gemini AIがYouTube動画情報からレシピを構造化解析中...');
+          
+          // YouTube IDの抽出
+          const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+          const match = youtubeUrl.trim().match(regExp);
+          const youtubeId = (match && match[2].length === 11) ? match[2] : null;
+
+          created = await analyzeWithGemini(
+            geminiKey,
+            `YouTube料理動画 URL: ${youtubeUrl.trim()}\nこの動画のレシピ内容（料理名、必要な材料と正確な分量、調理手順、プロのコツ）を詳細に解析して構造化してください。`,
+            {
+              model: settings.gemini_model || 'gemini-2.0-flash',
+              sourceType: 'yt',
+              sourceBadge: '▶ YouTube (Gemini)',
+            }
+          );
+          if (youtubeId) {
+            created.youtubeId = youtubeId;
+            created.sourceUrl = youtubeUrl.trim();
+            if (!created.coverImage) {
+              created.coverImage = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
+            }
+          }
+        } else if (activeTab === 'x') {
+          if (!xPostText.trim()) throw new Error('X（Twitter）のポスト内容を入力してください');
+          setCurrentStepText('Gemini AIがXポストから材料と工程を抽出中...');
+          created = await analyzeWithGemini(geminiKey, xPostText.trim(), {
+            model: settings.gemini_model || 'gemini-2.0-flash',
+            sourceType: 'x',
+            sourceBadge: '𝕏 ポスト (Gemini)',
+          });
+        } else if (activeTab === 'memo') {
+          if (!memoText.trim()) throw new Error('メモのテキストを入力してください');
+          setCurrentStepText('Gemini AIがメモのテキストを構造化レシピに変換中...');
+          created = await analyzeWithGemini(geminiKey, memoText.trim(), {
+            model: settings.gemini_model || 'gemini-2.0-flash',
+            sourceType: 'memo',
+            sourceBadge: '📝 メモ (Gemini)',
+          });
+        } else if (activeTab === 'ai') {
+          if (!aiPrompt.trim()) throw new Error('料理の要望を入力してください');
+          setCurrentStepText('Gemini AIがオリジナルレシピを考案中...');
+          created = await analyzeWithGemini(
+            geminiKey,
+            `以下の要望に基づき、家庭で美味しく作れる最高のレシピを考案してください：\n${aiPrompt.trim()}`,
+            {
+              model: settings.gemini_model || 'gemini-2.0-flash',
+              sourceType: 'ai',
+              sourceBadge: '🤖 Gemini AI考案',
+            }
+          );
+        }
+      } else {
+        // === 2. サーバーAPIまたはOpenAI経由 ===
+        if (activeTab === 'yt') {
+          if (!youtubeUrl.trim()) throw new Error('YouTubeのURLを入力してください');
+          setCurrentStepText('YouTube動画の字幕・メタデータを取得中...');
+          const result = await analyzeApi.youtube(youtubeUrl.trim());
+          created = result.recipe;
+        } else if (activeTab === 'x') {
+          if (!xPostText.trim()) throw new Error('X（Twitter）のポスト内容を入力してください');
+          setCurrentStepText('Xポストからレシピ情報をAI抽出中...');
+          const result = await analyzeApi.text(xPostText.trim(), 'x');
+          created = result.recipe;
+        } else if (activeTab === 'memo') {
+          if (!memoText.trim()) throw new Error('メモのテキストを入力してください');
+          setCurrentStepText('テキスト・メモからレシピ構造をAI解析中...');
+          const result = await analyzeApi.text(memoText.trim(), 'memo');
+          created = result.recipe;
+        } else if (activeTab === 'ai') {
+          if (!aiPrompt.trim()) throw new Error('料理の要望を入力してください');
+          setCurrentStepText('AIシェフがオリジナルレシピを考案中...');
+          const result = await analyzeApi.generate(aiPrompt.trim());
+          created = result.recipe;
+        }
       }
 
       if (created) {
         onRecipeCreated(created);
         onClose();
-        // フォームリセット
         setYoutubeUrl('');
         setXPostText('');
         setMemoText('');
@@ -118,7 +195,7 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
                 />
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                💡 動画の字幕（文字起こし）と概要欄を自動解析し、材料・分量・手順・調理テクニックを瞬時に構造化します。
+                💡 動画URLを貼り付けると、AIが材料・正確な分量・手順・調理テクニックを瞬時に自動抽出します。
               </div>
             </div>
           )}
@@ -201,7 +278,7 @@ export default function ImportModal({ isOpen, onClose, onRecipeCreated }) {
                 <span>{currentStepText || 'AI解析を実行中...'}</span>
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '4px' }}>
-                OpenAI GPT-4oが材料・手順・下処理ガイドを構築しています（通常5〜15秒）
+                材料・分量・手順・プロの技を構造化しています（通常3〜8秒）
               </div>
             </div>
           )}
