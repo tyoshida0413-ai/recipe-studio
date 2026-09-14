@@ -188,12 +188,18 @@ export function useRecipes() {
       }
 
       // 3. LocalStorage キャッシュ
+      const initialized = localStorage.getItem('recipe_ai_initialized');
       const local = JSON.parse(localStorage.getItem(LOCAL_RECIPES_KEY) || 'null');
-      if (local && local.length > 0) {
+      if (local !== null) {
+        // ユーザーが削除して0件にした場合もそのまま空を維持
         setRecipes(local);
-      } else {
+      } else if (!initialized) {
+        // アプリ初回起動時のみ初期サンプルを登録
+        localStorage.setItem('recipe_ai_initialized', 'true');
         setRecipes(DEFAULT_RECIPES);
         localStorage.setItem(LOCAL_RECIPES_KEY, JSON.stringify(DEFAULT_RECIPES));
+      } else {
+        setRecipes([]);
       }
     } catch (err) {
       setError(err.message);
