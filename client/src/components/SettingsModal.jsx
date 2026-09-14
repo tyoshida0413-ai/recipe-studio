@@ -30,6 +30,7 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
   // Supabase 同期設定
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseAnonKey, setSupabaseAnonKey] = useState('');
+  const [showSupabaseKey, setShowSupabaseKey] = useState(false);
   const [syncKey, setSyncKey] = useState('');
   const [testStatus, setTestStatus] = useState(null);
 
@@ -284,16 +285,37 @@ export default function SettingsModal({ isOpen, onClose, settings, hasApiKey, on
               />
             </div>
 
-            {/* Supabase Anon Key */}
+            {/* Supabase API Key */}
             <div className="form-group" style={{ marginBottom: '8px' }}>
-              <label className="form-label" style={{ fontSize: '0.82rem' }}>Supabase Anon Key（公開キー）</label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                value={supabaseAnonKey}
-                onChange={(e) => setSupabaseAnonKey(e.target.value)}
-              />
+              <label className="form-label" style={{ fontSize: '0.82rem', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Supabase API Key（Publishable Key または anon key）</span>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>sb_publishable_... 推奨</span>
+              </label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type={showSupabaseKey ? 'text' : 'password'}
+                  className="form-input"
+                  placeholder="sb_publishable_... (または従来の anon key)"
+                  value={supabaseAnonKey}
+                  onChange={(e) => {
+                    setSupabaseAnonKey(e.target.value);
+                    setTestStatus(null);
+                  }}
+                  style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.88rem' }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '0 10px', fontSize: '0.9rem' }}
+                  onClick={() => setShowSupabaseKey(!showSupabaseKey)}
+                  title={showSupabaseKey ? 'キーを隠す' : 'キーを表示する'}
+                >
+                  {showSupabaseKey ? '🙈' : '👁️'}
+                </button>
+              </div>
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                ※ Supabaseダッシュボード上部の「Connect」ボタン、または「Settings ⚙️」→「API Keys」で取得できます。
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
