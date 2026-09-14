@@ -1,0 +1,21 @@
+{
+  "name": "RecipeAI Studio",
+  "short_name": "RecipeAI",
+  "description": "レシピ自動作成・管理アプリ（調理モード・Mac/iPad同期対応）",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#faf8f5",
+  "theme_color": "#e05a2b",
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1546549032-9571cd6b27df?w=192&q=80",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1546549032-9571cd6b27df?w=512&q=80",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
